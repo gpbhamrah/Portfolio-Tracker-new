@@ -62,7 +62,7 @@ export const PortfolioAnalytics: React.FC<PortfolioAnalyticsProps> = ({ holdings
     if (active && payload && payload.length) {
       const data = payload[0].payload;
       return (
-        <div className="bg-slate-950 text-white p-3 rounded border border-slate-700 text-xs space-y-1 font-mono shadow-xl">
+        <div className="bg-slate-900 dark:bg-slate-950 text-white p-3 rounded border border-slate-700 text-xs space-y-1 font-mono shadow-xl">
           <p className="font-bold text-indigo-400">{data.name}</p>
           <p className="text-slate-300">Value: {formatCurrency(data.value)}</p>
           <p className="text-emerald-400 font-semibold">{data.percentage.toFixed(1)}% of portfolio</p>
@@ -75,13 +75,13 @@ export const PortfolioAnalytics: React.FC<PortfolioAnalyticsProps> = ({ holdings
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
       {/* 1. Asset Allocation Chart */}
-      <div className="bg-slate-900 p-5 sm:p-6 rounded-lg border border-slate-800 shadow-md shadow-black/10 flex flex-col justify-between">
+      <div className="bg-white dark:bg-slate-900 p-5 sm:p-6 rounded-lg border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-md dark:shadow-black/10 flex flex-col justify-between transition-colors">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-xs font-bold text-white flex items-center gap-1.5 uppercase tracking-wider font-mono">
-            <PieChartIcon className="w-3.5 h-3.5 text-indigo-400" />
+          <h3 className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5 uppercase tracking-wider font-mono">
+            <PieChartIcon className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
             Stock Asset Allocation
           </h3>
-          <span className="text-[11px] font-mono text-slate-500">{holdings.length} STOCKS</span>
+          <span className="text-[11px] font-mono text-slate-400 dark:text-slate-500">{holdings.length} STOCKS</span>
         </div>
 
         <div className="w-full h-60 relative flex items-center justify-center">
@@ -96,7 +96,8 @@ export const PortfolioAnalytics: React.FC<PortfolioAnalyticsProps> = ({ holdings
                   outerRadius={80}
                   paddingAngle={2}
                   dataKey="value"
-                  stroke="#0f172a"
+                  stroke="currentColor"
+                  className="text-white dark:text-slate-900"
                   strokeWidth={2}
                 >
                   {stockAllocationData.map((entry, index) => (
@@ -117,39 +118,39 @@ export const PortfolioAnalytics: React.FC<PortfolioAnalyticsProps> = ({ holdings
         {/* Legend */}
         <div className="mt-3 grid grid-cols-2 gap-x-2 gap-y-1.5 max-h-28 overflow-y-auto pr-1">
           {stockAllocationData.map((item, idx) => (
-            <div key={item.ticker} className="flex items-center gap-1.5 text-xs text-slate-300 font-mono">
+            <div key={item.ticker} className="flex items-center gap-1.5 text-xs text-slate-700 dark:text-slate-300 font-mono">
               <span
                 className="w-2 h-2 rounded-sm flex-shrink-0"
                 style={{ backgroundColor: COLORS[idx % COLORS.length] }}
               />
-              <span className="truncate text-slate-400">{item.name}</span>
-              <span className="font-bold text-white ml-auto">{item.percentage.toFixed(0)}%</span>
+              <span className="truncate text-slate-500 dark:text-slate-400">{item.name}</span>
+              <span className="font-bold text-slate-900 dark:text-white ml-auto">{item.percentage.toFixed(0)}%</span>
             </div>
           ))}
         </div>
       </div>
 
       {/* 2. Sector Exposure & Risk Table */}
-      <div className="bg-slate-900 p-5 sm:p-6 rounded-lg border border-slate-800 shadow-md shadow-black/10 lg:col-span-2 flex flex-col justify-between">
+      <div className="bg-white dark:bg-slate-900 p-5 sm:p-6 rounded-lg border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-md dark:shadow-black/10 lg:col-span-2 flex flex-col justify-between transition-colors">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-1 mb-4">
           <div>
-            <h3 className="text-xs font-bold text-white flex items-center gap-1.5 uppercase tracking-wider font-mono">
-              <ChartIcon className="w-3.5 h-3.5 text-indigo-400" />
+            <h3 className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5 uppercase tracking-wider font-mono">
+              <ChartIcon className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
               Sector Exposure & Concentration Risk
             </h3>
-            <p className="text-[11px] text-slate-400 font-mono mt-0.5">
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 font-mono mt-0.5">
               Risk guidelines recommend maintaining individual sector concentration below 30%
             </p>
           </div>
-          <span className="text-[11px] font-mono text-slate-500">
+          <span className="text-[11px] font-mono text-slate-400 dark:text-slate-500">
             {sectorSummary.length} SECTORS
           </span>
         </div>
 
-        <div className="overflow-x-auto rounded border border-slate-800 bg-slate-950/40">
+        <div className="overflow-x-auto rounded border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/40">
           <table className="w-full text-left border-collapse text-xs">
             <thead>
-              <tr className="bg-slate-900 border-b border-slate-800 text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+              <tr className="bg-slate-100 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 text-[10px] font-bold text-slate-500 uppercase tracking-widest">
                 <th className="p-3">Sector</th>
                 <th className="p-3 text-right">Allocation %</th>
                 <th className="p-3 text-right">Current Value</th>
@@ -157,53 +158,53 @@ export const PortfolioAnalytics: React.FC<PortfolioAnalyticsProps> = ({ holdings
                 <th className="p-3 text-center">Diversification</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800/80">
+            <tbody className="divide-y divide-slate-200/80 dark:divide-slate-800/80">
               {sectorSummary.map((sec, idx) => {
                 const isOverweight = sec.percentage > 30;
                 return (
-                  <tr key={sec.name} className="hover:bg-slate-800/50 transition">
-                    <td className="p-3 font-bold text-white">
+                  <tr key={sec.name} className="hover:bg-slate-100/80 dark:hover:bg-slate-800/50 transition">
+                    <td className="p-3 font-bold text-slate-900 dark:text-white">
                       <div className="flex items-center gap-2">
                         <span
                           className="w-2 h-2 rounded-sm"
                           style={{ backgroundColor: COLORS[idx % COLORS.length] }}
                         />
                         <span>{sec.name}</span>
-                        <span className="text-[11px] text-slate-500 font-mono font-normal">
+                        <span className="text-[11px] text-slate-400 dark:text-slate-500 font-mono font-normal">
                           ({sec.count})
                         </span>
                       </div>
                     </td>
                     <td className="p-3 text-right">
                       <div className="flex items-center justify-end gap-2">
-                        <div className="w-14 bg-slate-800 h-1.5 rounded overflow-hidden hidden sm:block">
+                        <div className="w-14 bg-slate-200 dark:bg-slate-800 h-1.5 rounded overflow-hidden hidden sm:block">
                           <div
                             className={`h-full rounded ${isOverweight ? 'bg-amber-500' : 'bg-indigo-500'}`}
                             style={{ width: `${Math.min(100, sec.percentage)}%` }}
                           />
                         </div>
-                        <span className="font-bold text-white font-mono">
+                        <span className="font-bold text-slate-900 dark:text-white font-mono">
                           {sec.percentage.toFixed(1)}%
                         </span>
                       </div>
                     </td>
-                    <td className="p-3 text-right font-mono text-slate-300">
+                    <td className="p-3 text-right font-mono text-slate-700 dark:text-slate-300">
                       {formatCurrency(sec.value)}
                     </td>
                     <td className="p-3 text-right font-mono font-bold">
                       <span
-                        className={sec.pl >= 0 ? 'text-emerald-400' : 'text-rose-400'}
+                        className={sec.pl >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}
                       >
                         {sec.pl >= 0 ? '+' : ''}{formatCurrency(sec.pl)}
                       </span>
                     </td>
                     <td className="p-3 text-center">
                       {isOverweight ? (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold font-mono bg-amber-950/80 text-amber-300 border border-amber-800">
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold font-mono bg-amber-50 dark:bg-amber-950/80 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
                           <AlertCircle className="w-3 h-3" /> OVERWEIGHT ({'>'}30%)
                         </span>
                       ) : (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold font-mono bg-emerald-950/80 text-emerald-300 border border-emerald-800">
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold font-mono bg-emerald-50 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
                           <CheckCircle2 className="w-3 h-3" /> BALANCED
                         </span>
                       )}

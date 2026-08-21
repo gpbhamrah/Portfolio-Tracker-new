@@ -3,15 +3,14 @@ import { Holding, WatchlistItem } from '../types';
 import { POPULAR_TICKERS } from '../data/defaultData';
 import { fetchBatchQuotes } from '../services/marketService';
 import { formatCurrency, formatHoldingDuration } from '../utils/formatters';
+import { CalendarPicker } from './CalendarPicker';
 import { 
   X, 
   Calendar, 
-  Sparkles, 
   RefreshCw, 
   TrendingUp, 
   ShieldAlert, 
-  Check, 
-  Search 
+  Check 
 } from 'lucide-react';
 
 interface ItemModalProps {
@@ -43,7 +42,6 @@ export const ItemModal: React.FC<ItemModalProps> = ({
   const [stopLoss, setStopLoss] = useState<number | ''>('');
   const [notes, setNotes] = useState('');
   const [isFetchingCmp, setIsFetchingCmp] = useState(false);
-  const [searchFilter, setSearchFilter] = useState('');
   const [showSuggestions, setShowSuggestions] = useState(false);
 
   useEffect(() => {
@@ -155,20 +153,6 @@ export const ItemModal: React.FC<ItemModalProps> = ({
     await fetchLiveCmpForTicker(ticker, true);
   };
 
-  const setDatePreset = (preset: 'today' | 'yesterday' | '1m' | '6m' | '1y') => {
-    const d = new Date();
-    if (preset === 'yesterday') {
-      d.setDate(d.getDate() - 1);
-    } else if (preset === '1m') {
-      d.setMonth(d.getMonth() - 1);
-    } else if (preset === '6m') {
-      d.setMonth(d.getMonth() - 6);
-    } else if (preset === '1y') {
-      d.setFullYear(d.getFullYear() - 1);
-    }
-    setBuyDate(d.toISOString().slice(0, 10));
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name || !ticker) {
@@ -237,21 +221,21 @@ export const ItemModal: React.FC<ItemModalProps> = ({
   );
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-xs">
-      <div className="bg-slate-900 rounded-lg max-w-xl w-full p-6 sm:p-7 shadow-2xl border border-slate-800 transition-colors max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs">
+      <div className="bg-white dark:bg-slate-900 rounded-lg max-w-xl w-full p-6 sm:p-7 shadow-2xl border border-slate-200 dark:border-slate-800 transition-colors max-h-[90vh] overflow-y-auto">
         {/* Header */}
-        <div className="flex justify-between items-center pb-4 border-b border-slate-800">
+        <div className="flex justify-between items-center pb-4 border-b border-slate-200 dark:border-slate-800">
           <div>
-            <h3 className="text-base sm:text-lg font-bold text-white uppercase tracking-tight font-mono">
+            <h3 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white uppercase tracking-tight font-mono">
               {initialItem ? 'EDIT INVESTMENT POSITION' : 'ADD NEW POSITION'}
             </h3>
-            <p className="text-xs text-slate-400 mt-0.5 font-mono">
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 font-mono">
               Enter purchase date, price targets & ticker details
             </p>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded text-slate-400 hover:text-white hover:bg-slate-800 transition"
+            className="p-1.5 rounded text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
@@ -260,7 +244,7 @@ export const ItemModal: React.FC<ItemModalProps> = ({
         <form onSubmit={handleSubmit} className="mt-5 space-y-4">
           {/* Position Type Selector */}
           <div>
-            <label className="block text-[10px] uppercase tracking-widest font-bold text-slate-400 mb-1.5">
+            <label className="block text-[10px] uppercase tracking-widest font-bold text-slate-500 dark:text-slate-400 mb-1.5">
               Position Category
             </label>
             <div className="grid grid-cols-2 gap-2 font-mono">
@@ -270,7 +254,7 @@ export const ItemModal: React.FC<ItemModalProps> = ({
                 className={`py-2 px-3 rounded text-xs font-bold border transition cursor-pointer ${
                   type === 'holding'
                     ? 'bg-indigo-600 text-white border-indigo-500 shadow-sm'
-                    : 'bg-slate-800/80 text-slate-400 border-slate-700 hover:bg-slate-800'
+                    : 'bg-slate-100 dark:bg-slate-800/80 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-800'
                 }`}
               >
                 ACTIVE HOLDING
@@ -281,7 +265,7 @@ export const ItemModal: React.FC<ItemModalProps> = ({
                 className={`py-2 px-3 rounded text-xs font-bold border transition cursor-pointer ${
                   type === 'watchlist'
                     ? 'bg-indigo-600 text-white border-indigo-500 shadow-sm'
-                    : 'bg-slate-800/80 text-slate-400 border-slate-700 hover:bg-slate-800'
+                    : 'bg-slate-100 dark:bg-slate-800/80 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-800'
                 }`}
               >
                 WATCHLIST SETUP
@@ -293,16 +277,16 @@ export const ItemModal: React.FC<ItemModalProps> = ({
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
             <div className="relative">
               <div className="flex justify-between items-center mb-1">
-                <label className="block text-[10px] uppercase tracking-widest font-bold text-slate-400">
+                <label className="block text-[10px] uppercase tracking-widest font-bold text-slate-500 dark:text-slate-400">
                   Stock Symbol / Ticker *
                 </label>
                 {isFetchingCmp ? (
-                  <span className="text-[10px] text-indigo-400 font-mono flex items-center gap-1">
+                  <span className="text-[10px] text-indigo-600 dark:text-indigo-400 font-mono flex items-center gap-1">
                     <RefreshCw className="w-2.5 h-2.5 animate-spin" />
                     SYNCING CMP...
                   </span>
                 ) : cmp ? (
-                  <span className="text-[10px] text-emerald-400 font-mono flex items-center gap-1">
+                  <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-mono flex items-center gap-1">
                     <Check className="w-2.5 h-2.5" />
                     LIVE CMP: ₹{Number(cmp).toLocaleString('en-IN')}
                   </span>
@@ -325,13 +309,13 @@ export const ItemModal: React.FC<ItemModalProps> = ({
                     setTimeout(() => setShowSuggestions(false), 200);
                   }}
                   onFocus={() => setShowSuggestions(true)}
-                  className="w-full p-2 text-xs rounded border border-slate-700 bg-slate-950 text-white font-mono uppercase focus:outline-none focus:border-indigo-500 pr-9"
+                  className="w-full p-2 text-xs rounded border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white font-mono uppercase focus:outline-none focus:border-indigo-500 pr-9"
                 />
                 {ticker && (
                   <button
                     type="button"
                     onClick={handleFetchLivePrice}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-indigo-400 hover:bg-slate-800 rounded cursor-pointer"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-indigo-600 dark:text-indigo-400 hover:bg-slate-200 dark:hover:bg-slate-800 rounded cursor-pointer"
                     title="Fetch live CMP now"
                   >
                     <RefreshCw className={`w-3.5 h-3.5 ${isFetchingCmp ? 'animate-spin' : ''}`} />
@@ -341,19 +325,19 @@ export const ItemModal: React.FC<ItemModalProps> = ({
 
               {/* Suggestions Dropdown */}
               {showSuggestions && ticker.length >= 2 && filteredSuggestions.length > 0 && (
-                <div className="absolute z-20 top-full left-0 right-0 mt-1 bg-slate-950 border border-slate-700 rounded shadow-xl max-h-48 overflow-y-auto divide-y divide-slate-800 font-mono">
+                <div className="absolute z-20 top-full left-0 right-0 mt-1 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded shadow-xl max-h-48 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800 font-mono">
                   {filteredSuggestions.map((item) => (
                     <button
                       type="button"
                       key={item.ticker}
                       onClick={() => handleSelectSuggestion(item)}
-                      className="w-full text-left p-2 hover:bg-slate-800 text-xs flex justify-between items-center transition cursor-pointer"
+                      className="w-full text-left p-2 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs flex justify-between items-center transition cursor-pointer"
                     >
                       <div>
-                        <span className="font-bold text-white">{item.name}</span>
-                        <span className="text-[10px] text-slate-400 block font-mono">{item.ticker}</span>
+                        <span className="font-bold text-slate-900 dark:text-white">{item.name}</span>
+                        <span className="text-[10px] text-slate-500 dark:text-slate-400 block font-mono">{item.ticker}</span>
                       </div>
-                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-300">
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
                         {item.sector}
                       </span>
                     </button>
@@ -363,7 +347,7 @@ export const ItemModal: React.FC<ItemModalProps> = ({
             </div>
 
             <div>
-              <label className="block text-[10px] uppercase tracking-widest font-bold text-slate-400 mb-1">
+              <label className="block text-[10px] uppercase tracking-widest font-bold text-slate-500 dark:text-slate-400 mb-1">
                 Company / Stock Name *
               </label>
               <input
@@ -372,15 +356,15 @@ export const ItemModal: React.FC<ItemModalProps> = ({
                 placeholder="e.g. Reliance Industries"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                className="w-full p-2 text-xs rounded border border-slate-700 bg-slate-950 text-white focus:outline-none focus:border-indigo-500"
+                className="w-full p-2 text-xs rounded border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500"
               />
             </div>
           </div>
 
-          {/* Sector & Buy Date */}
+          {/* Sector & Buy Date with CalendarPicker */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
             <div>
-              <label className="block text-[10px] uppercase tracking-widest font-bold text-slate-400 mb-1">
+              <label className="block text-[10px] uppercase tracking-widest font-bold text-slate-500 dark:text-slate-400 mb-1">
                 Sector / Industry
               </label>
               <input
@@ -388,59 +372,26 @@ export const ItemModal: React.FC<ItemModalProps> = ({
                 placeholder="e.g. IT, Energy, Banking, Auto"
                 value={sector}
                 onChange={(e) => setSector(e.target.value)}
-                className="w-full p-2 text-xs rounded border border-slate-700 bg-slate-950 text-white focus:outline-none focus:border-indigo-500 font-mono"
+                className="w-full p-2 text-xs rounded border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500 font-mono"
               />
             </div>
 
-            {/* Buy Date / Added Date Picker */}
+            {/* Buy Date / Added Date CalendarPicker */}
             <div>
               <div className="flex justify-between items-center mb-1">
-                <label className="block text-[10px] uppercase tracking-widest font-bold text-indigo-400 flex items-center gap-1">
+                <label className="block text-[10px] uppercase tracking-widest font-bold text-indigo-600 dark:text-indigo-400 flex items-center gap-1">
                   <Calendar className="w-3.5 h-3.5" />
                   <span>{type === 'holding' ? 'Purchase (Buy) Date *' : 'Added Date'}</span>
                 </label>
-                <span className="text-[10px] text-slate-400 font-mono">
+                <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono">
                   {formatHoldingDuration(buyDate)} held
                 </span>
               </div>
-              <input
-                type="date"
-                required
+              <CalendarPicker
                 value={buyDate}
-                onChange={(e) => setBuyDate(e.target.value)}
-                className="w-full p-2 text-xs rounded border border-slate-700 bg-slate-950 text-white focus:outline-none focus:border-indigo-500 font-mono"
+                onChange={(newDate) => setBuyDate(newDate)}
+                className="w-full"
               />
-              {/* Quick Date Presets */}
-              <div className="flex gap-1.5 mt-1.5 font-mono">
-                <button
-                  type="button"
-                  onClick={() => setDatePreset('today')}
-                  className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 cursor-pointer"
-                >
-                  Today
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setDatePreset('yesterday')}
-                  className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 cursor-pointer"
-                >
-                  Yesterday
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setDatePreset('1m')}
-                  className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 cursor-pointer"
-                >
-                  1m
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setDatePreset('1y')}
-                  className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-emerald-400 font-bold cursor-pointer"
-                >
-                  1y (LTCG)
-                </button>
-              </div>
             </div>
           </div>
 
@@ -448,7 +399,7 @@ export const ItemModal: React.FC<ItemModalProps> = ({
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
             {type === 'holding' && (
               <div>
-                <label className="block text-[10px] uppercase tracking-widest font-bold text-slate-400 mb-1">
+                <label className="block text-[10px] uppercase tracking-widest font-bold text-slate-500 dark:text-slate-400 mb-1">
                   Quantity (Shares) *
                 </label>
                 <input
@@ -459,21 +410,21 @@ export const ItemModal: React.FC<ItemModalProps> = ({
                   placeholder="10"
                   value={qty}
                   onChange={(e) => setQty(e.target.value === '' ? '' : Number(e.target.value))}
-                  className="w-full p-2 text-xs rounded border border-slate-700 bg-slate-950 text-white font-mono focus:outline-none focus:border-indigo-500"
+                  className="w-full p-2 text-xs rounded border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white font-mono focus:outline-none focus:border-indigo-500"
                 />
               </div>
             )}
 
             <div>
               <div className="flex justify-between items-center mb-1">
-                <label className="block text-[10px] uppercase tracking-widest font-bold text-slate-400">
+                <label className="block text-[10px] uppercase tracking-widest font-bold text-slate-500 dark:text-slate-400">
                   {type === 'holding' ? 'Avg Buy Price (₹) *' : 'Target Entry (₹) *'}
                 </label>
                 {typeof cmp === 'number' && cmp > 0 && buyPrice === '' && (
                   <button
                     type="button"
                     onClick={() => setBuyPrice(cmp)}
-                    className="text-[9px] text-indigo-400 hover:underline font-mono cursor-pointer"
+                    className="text-[9px] text-indigo-600 dark:text-indigo-400 hover:underline font-mono cursor-pointer"
                   >
                     Use CMP
                   </button>
@@ -486,20 +437,20 @@ export const ItemModal: React.FC<ItemModalProps> = ({
                 placeholder="e.g. 2450.00"
                 value={buyPrice}
                 onChange={(e) => setBuyPrice(e.target.value === '' ? '' : Number(e.target.value))}
-                className="w-full p-2 text-xs rounded border border-slate-700 bg-slate-950 text-white font-mono focus:outline-none focus:border-indigo-500"
+                className="w-full p-2 text-xs rounded border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white font-mono focus:outline-none focus:border-indigo-500"
               />
             </div>
 
             <div>
               <div className="flex justify-between items-center mb-1">
-                <label className="block text-[10px] uppercase tracking-widest font-bold text-slate-400">
+                <label className="block text-[10px] uppercase tracking-widest font-bold text-slate-500 dark:text-slate-400">
                   Live CMP (₹)
                 </label>
                 {ticker && (
                   <button
                     type="button"
                     onClick={handleFetchLivePrice}
-                    className="text-[9px] text-indigo-400 hover:underline font-mono cursor-pointer flex items-center gap-0.5"
+                    className="text-[9px] text-indigo-600 dark:text-indigo-400 hover:underline font-mono cursor-pointer flex items-center gap-0.5"
                   >
                     <RefreshCw className={`w-2.5 h-2.5 ${isFetchingCmp ? 'animate-spin' : ''}`} />
                     Refresh
@@ -513,10 +464,10 @@ export const ItemModal: React.FC<ItemModalProps> = ({
                   placeholder={isFetchingCmp ? 'Fetching quote...' : 'Auto-fetched'}
                   value={cmp}
                   onChange={(e) => setCmp(e.target.value === '' ? '' : Number(e.target.value))}
-                  className="w-full p-2 text-xs rounded border border-slate-700 bg-slate-950 text-white font-mono focus:outline-none focus:border-indigo-500"
+                  className="w-full p-2 text-xs rounded border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white font-mono focus:outline-none focus:border-indigo-500"
                 />
                 {isFetchingCmp && (
-                  <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-indigo-400 font-mono animate-pulse">
+                  <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-indigo-600 dark:text-indigo-400 font-mono animate-pulse">
                     FETCHING...
                   </span>
                 )}
@@ -527,8 +478,8 @@ export const ItemModal: React.FC<ItemModalProps> = ({
           {/* Targets: Sell Target & Stop Loss */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
             <div>
-              <label className="block text-[10px] uppercase tracking-widest font-bold text-slate-400 mb-1 flex items-center gap-1">
-                <TrendingUp className="w-3 h-3 text-emerald-400" />
+              <label className="block text-[10px] uppercase tracking-widest font-bold text-slate-500 dark:text-slate-400 mb-1 flex items-center gap-1">
+                <TrendingUp className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
                 <span>Target Exit Price (₹)</span>
               </label>
               <input
@@ -537,13 +488,13 @@ export const ItemModal: React.FC<ItemModalProps> = ({
                 placeholder="e.g. 2800.00"
                 value={sellPrice}
                 onChange={(e) => setSellPrice(e.target.value === '' ? '' : Number(e.target.value))}
-                className="w-full p-2 text-xs rounded border border-slate-700 bg-slate-950 text-white font-mono focus:outline-none focus:border-indigo-500"
+                className="w-full p-2 text-xs rounded border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white font-mono focus:outline-none focus:border-indigo-500"
               />
             </div>
 
             <div>
-              <label className="block text-[10px] uppercase tracking-widest font-bold text-slate-400 mb-1 flex items-center gap-1">
-                <ShieldAlert className="w-3 h-3 text-rose-400" />
+              <label className="block text-[10px] uppercase tracking-widest font-bold text-slate-500 dark:text-slate-400 mb-1 flex items-center gap-1">
+                <ShieldAlert className="w-3 h-3 text-rose-600 dark:text-rose-400" />
                 <span>Stop Loss Price (₹)</span>
               </label>
               <input
@@ -552,14 +503,14 @@ export const ItemModal: React.FC<ItemModalProps> = ({
                 placeholder="e.g. 2250.00"
                 value={stopLoss}
                 onChange={(e) => setStopLoss(e.target.value === '' ? '' : Number(e.target.value))}
-                className="w-full p-2 text-xs rounded border border-slate-700 bg-slate-950 text-white font-mono focus:outline-none focus:border-indigo-500"
+                className="w-full p-2 text-xs rounded border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white font-mono focus:outline-none focus:border-indigo-500"
               />
             </div>
           </div>
 
           {/* Notes */}
           <div>
-            <label className="block text-[10px] uppercase tracking-widest font-bold text-slate-400 mb-1">
+            <label className="block text-[10px] uppercase tracking-widest font-bold text-slate-500 dark:text-slate-400 mb-1">
               Notes & Strategy Thesis
             </label>
             <textarea
@@ -567,16 +518,16 @@ export const ItemModal: React.FC<ItemModalProps> = ({
               placeholder="Investment thesis, technical levels, earnings..."
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              className="w-full p-2 text-xs rounded border border-slate-700 bg-slate-950 text-white focus:outline-none focus:border-indigo-500 font-mono"
+              className="w-full p-2 text-xs rounded border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500 font-mono"
             />
           </div>
 
           {/* Preview Bar */}
           {type === 'holding' && typeof qty === 'number' && typeof buyPrice === 'number' && buyPrice > 0 && (
-            <div className="p-2.5 rounded bg-slate-950 border border-slate-800 flex flex-wrap justify-between items-center text-xs gap-2 font-mono">
+            <div className="p-2.5 rounded bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 flex flex-wrap justify-between items-center text-xs gap-2 font-mono">
               <div>
                 <span className="text-slate-500">INVESTED: </span>
-                <span className="font-bold text-white">
+                <span className="font-bold text-slate-900 dark:text-white">
                   {formatCurrency(qty * buyPrice)}
                 </span>
               </div>
@@ -585,7 +536,7 @@ export const ItemModal: React.FC<ItemModalProps> = ({
                   <span className="text-slate-500">P/L: </span>
                   <span
                     className={`font-bold ${
-                      cmp >= buyPrice ? 'text-emerald-400' : 'text-rose-400'
+                      cmp >= buyPrice ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'
                     }`}
                   >
                     {cmp >= buyPrice ? '+' : ''}{formatCurrency((cmp - buyPrice) * qty)} (
@@ -597,11 +548,11 @@ export const ItemModal: React.FC<ItemModalProps> = ({
           )}
 
           {/* Action Buttons */}
-          <div className="flex justify-end gap-3 pt-3 border-t border-slate-800">
+          <div className="flex justify-end gap-3 pt-3 border-t border-slate-200 dark:border-slate-800">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 rounded text-xs font-bold text-slate-400 hover:bg-slate-800 hover:text-white transition font-mono"
+              className="px-4 py-2 rounded text-xs font-bold text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-800 dark:hover:text-white transition font-mono cursor-pointer"
             >
               CANCEL
             </button>

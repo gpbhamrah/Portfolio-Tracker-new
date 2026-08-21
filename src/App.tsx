@@ -336,7 +336,7 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-200 font-sans antialiased selection:bg-indigo-500 selection:text-white">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-200 font-sans antialiased selection:bg-indigo-500 selection:text-white transition-colors duration-200">
       {/* Toast Notification */}
       {toastMessage && (
         <div className="fixed bottom-6 right-6 z-50 animate-in fade-in slide-in-from-bottom-5 duration-300">
@@ -374,7 +374,7 @@ export default function App() {
         <PortfolioStats holdings={holdings} watchlist={watchlist} />
 
         {/* Tabs Bar */}
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-3">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 dark:border-slate-800 pb-3">
           <div className="flex items-center gap-1 sm:gap-2 overflow-x-auto pb-1 max-w-full font-mono">
             <button
               id="tab-holdings"
@@ -382,7 +382,7 @@ export default function App() {
               className={`flex items-center gap-2 px-3.5 py-2 rounded text-xs font-bold transition cursor-pointer border ${
                 activeTab === 'holdings'
                   ? 'bg-indigo-600 text-white border-indigo-500 shadow-sm'
-                  : 'bg-slate-900 text-slate-400 hover:text-white hover:bg-slate-800 border-slate-800'
+                  : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 border-slate-200 dark:border-slate-800'
               }`}
             >
               <Briefcase className="w-3.5 h-3.5" />
@@ -391,7 +391,7 @@ export default function App() {
                 className={`px-1.5 py-0.2 rounded text-[10px] font-mono ${
                   activeTab === 'holdings'
                     ? 'bg-indigo-800 text-white'
-                    : 'bg-slate-800 text-slate-400'
+                    : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-400'
                 }`}
               >
                 {holdings.length}
@@ -404,7 +404,7 @@ export default function App() {
               className={`flex items-center gap-2 px-3.5 py-2 rounded text-xs font-bold transition cursor-pointer border ${
                 activeTab === 'watchlist'
                   ? 'bg-indigo-600 text-white border-indigo-500 shadow-sm'
-                  : 'bg-slate-900 text-slate-400 hover:text-white hover:bg-slate-800 border-slate-800'
+                  : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 border-slate-200 dark:border-slate-800'
               }`}
             >
               <Eye className="w-3.5 h-3.5" />
@@ -413,7 +413,7 @@ export default function App() {
                 className={`px-1.5 py-0.2 rounded text-[10px] font-mono ${
                   activeTab === 'watchlist'
                     ? 'bg-indigo-800 text-white'
-                    : 'bg-slate-800 text-slate-400'
+                    : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-400'
                 }`}
               >
                 {watchlist.length}
@@ -426,7 +426,7 @@ export default function App() {
               className={`flex items-center gap-2 px-3.5 py-2 rounded text-xs font-bold transition cursor-pointer border ${
                 activeTab === 'sectors'
                   ? 'bg-indigo-600 text-white border-indigo-500 shadow-sm'
-                  : 'bg-slate-900 text-slate-400 hover:text-white hover:bg-slate-800 border-slate-800'
+                  : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 border-slate-200 dark:border-slate-800'
               }`}
             >
               <Activity className="w-3.5 h-3.5" />
@@ -435,7 +435,7 @@ export default function App() {
                 className={`px-1.5 py-0.2 rounded text-[10px] font-mono ${
                   activeTab === 'sectors'
                     ? 'bg-indigo-800 text-white'
-                    : 'bg-slate-800 text-slate-400'
+                    : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-400'
                 }`}
               >
                 {sectors.length}
@@ -448,7 +448,7 @@ export default function App() {
               className={`flex items-center gap-2 px-3.5 py-2 rounded text-xs font-bold transition cursor-pointer border ${
                 activeTab === 'analytics'
                   ? 'bg-indigo-600 text-white border-indigo-500 shadow-sm'
-                  : 'bg-slate-900 text-slate-400 hover:text-white hover:bg-slate-800 border-slate-800'
+                  : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 border-slate-200 dark:border-slate-800'
               }`}
             >
               <PieChart className="w-3.5 h-3.5" />

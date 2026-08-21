@@ -52,46 +52,46 @@ export const PortfolioStats: React.FC<PortfolioStatsProps> = ({ holdings, watchl
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
       {/* 1. Total Invested */}
-      <div className="bg-slate-900 p-5 rounded-lg border border-slate-800 shadow-md shadow-black/10 flex flex-col justify-between">
+      <div className="bg-white dark:bg-slate-900 p-5 rounded-lg border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-md dark:shadow-black/10 flex flex-col justify-between transition-colors">
         <div className="flex justify-between items-start">
           <div>
-            <p className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">
+            <p className="text-[10px] uppercase tracking-widest text-slate-400 dark:text-slate-500 font-bold">
               Total Capital Invested
             </p>
-            <p className="text-2xl font-bold text-white mt-1.5 font-mono">
+            <p className="text-2xl font-bold text-slate-900 dark:text-white mt-1.5 font-mono">
               {formatCurrency(totalInvested)}
             </p>
           </div>
-          <div className="w-8 h-8 rounded bg-indigo-600/20 border border-indigo-500/40 text-indigo-400 flex items-center justify-center">
+          <div className="w-8 h-8 rounded bg-indigo-50 dark:bg-indigo-600/20 border border-indigo-200 dark:border-indigo-500/40 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
             <Wallet className="w-4 h-4" />
           </div>
         </div>
-        <div className="mt-4 pt-3 border-t border-slate-800/80 flex items-center justify-between text-xs font-mono text-slate-400">
+        <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-xs font-mono text-slate-500 dark:text-slate-400">
           <span>{holdings.length} Positions Active</span>
-          <span className="text-slate-500">{watchlist.length} Watchlist</span>
+          <span className="text-slate-400 dark:text-slate-500">{watchlist.length} Watchlist</span>
         </div>
       </div>
 
       {/* 2. Current Portfolio Value */}
-      <div className="bg-slate-900 p-5 rounded-lg border border-slate-800 shadow-md shadow-black/10 flex flex-col justify-between">
+      <div className="bg-white dark:bg-slate-900 p-5 rounded-lg border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-md dark:shadow-black/10 flex flex-col justify-between transition-colors">
         <div className="flex justify-between items-start">
           <div>
-            <p className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">
+            <p className="text-[10px] uppercase tracking-widest text-slate-400 dark:text-slate-500 font-bold">
               Current Market Value
             </p>
-            <p className="text-2xl font-bold text-white mt-1.5 font-mono">
+            <p className="text-2xl font-bold text-slate-900 dark:text-white mt-1.5 font-mono">
               {formatCurrency(totalCurrentValue)}
             </p>
           </div>
-          <div className="w-8 h-8 rounded bg-slate-800 border border-slate-700 text-slate-300 flex items-center justify-center">
+          <div className="w-8 h-8 rounded bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 flex items-center justify-center">
             <Layers className="w-4 h-4" />
           </div>
         </div>
-        <div className="mt-4 pt-3 border-t border-slate-800/80 flex items-center justify-between text-xs font-mono">
-          <span className="text-slate-500 uppercase text-[10px] tracking-wider font-bold">Day's Net:</span>
+        <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-xs font-mono">
+          <span className="text-slate-400 dark:text-slate-500 uppercase text-[10px] tracking-wider font-bold">Day's Net:</span>
           <span
             className={`font-semibold font-mono ${
-              todayPL >= 0 ? 'text-emerald-400' : 'text-rose-400'
+              todayPL >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'
             }`}
           >
             {todayPL >= 0 ? '+' : ''}{formatCurrency(todayPL)}
@@ -100,16 +100,16 @@ export const PortfolioStats: React.FC<PortfolioStatsProps> = ({ holdings, watchl
       </div>
 
       {/* 3. Total Unrealized P/L */}
-      <div className="bg-slate-900 p-5 rounded-lg border border-slate-800 shadow-md shadow-black/10 flex flex-col justify-between">
+      <div className="bg-white dark:bg-slate-900 p-5 rounded-lg border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-md dark:shadow-black/10 flex flex-col justify-between transition-colors">
         <div className="flex justify-between items-start">
           <div>
-            <p className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">
+            <p className="text-[10px] uppercase tracking-widest text-slate-400 dark:text-slate-500 font-bold">
               Unrealized Returns (P/L)
             </p>
             <div className="flex items-baseline gap-2 mt-1.5">
               <p
                 className={`text-2xl font-bold font-mono ${
-                  totalPL >= 0 ? 'text-emerald-400' : 'text-rose-400'
+                  totalPL >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'
                 }`}
               >
                 {totalPL >= 0 ? '+' : ''}{formatCurrency(totalPL)}
@@ -119,59 +119,59 @@ export const PortfolioStats: React.FC<PortfolioStatsProps> = ({ holdings, watchl
           <div
             className={`w-8 h-8 rounded border flex items-center justify-center ${
               totalPL >= 0
-                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
-                : 'bg-rose-500/10 text-rose-400 border-rose-500/30'
+                ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-500/30'
+                : 'bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-200 dark:border-rose-500/30'
             }`}
           >
             {totalPL >= 0 ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
           </div>
         </div>
-        <div className="mt-4 pt-3 border-t border-slate-800/80 flex items-center justify-between text-xs font-mono">
+        <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-xs font-mono">
           <span
             className={`font-bold px-2 py-0.5 rounded text-[11px] ${
               totalPL >= 0
-                ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-800/80'
-                : 'bg-rose-950/80 text-rose-300 border border-rose-800/80'
+                ? 'bg-emerald-50 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/80'
+                : 'bg-rose-50 dark:bg-rose-950/80 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800/80'
             }`}
           >
             {totalPLPercent >= 0 ? '+' : ''}{totalPLPercent.toFixed(2)}% Overall
           </span>
-          <span className="text-slate-500">Unrealized</span>
+          <span className="text-slate-400 dark:text-slate-500">Unrealized</span>
         </div>
       </div>
 
       {/* 4. Trigger Alerts & Holding Duration */}
-      <div className="bg-slate-900 p-5 rounded-lg border border-slate-800 shadow-md shadow-black/10 flex flex-col justify-between">
+      <div className="bg-white dark:bg-slate-900 p-5 rounded-lg border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-md dark:shadow-black/10 flex flex-col justify-between transition-colors">
         <div>
           <div className="flex justify-between items-center">
-            <p className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">
+            <p className="text-[10px] uppercase tracking-widest text-slate-400 dark:text-slate-500 font-bold">
               Holding Term & Triggers
             </p>
-            <Calendar className="w-3.5 h-3.5 text-slate-500" />
+            <Calendar className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500" />
           </div>
           <div className="flex items-center gap-2 mt-2 font-mono">
-            <span className="text-xs px-2.5 py-1 rounded bg-slate-800 text-slate-300 border border-slate-700 font-medium">
+            <span className="text-xs px-2.5 py-1 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 font-medium">
               {ltcgCount} LTCG ({'>'}1y)
             </span>
-            <span className="text-xs px-2.5 py-1 rounded bg-slate-800 text-slate-300 border border-slate-700 font-medium">
+            <span className="text-xs px-2.5 py-1 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 font-medium">
               {stcgCount} STCG ({'<'}1y)
             </span>
           </div>
         </div>
 
-        <div className="mt-3 pt-3 border-t border-slate-800/80 flex items-center gap-2 text-xs font-mono">
+        <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-800/80 flex items-center gap-2 text-xs font-mono">
           {targetReachedCount > 0 && (
-            <span className="inline-flex items-center gap-1 bg-emerald-950/80 text-emerald-300 px-2 py-0.5 rounded text-[11px] font-bold border border-emerald-800">
+            <span className="inline-flex items-center gap-1 bg-emerald-50 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 px-2 py-0.5 rounded text-[11px] font-bold border border-emerald-200 dark:border-emerald-800">
               <Target className="w-3 h-3" /> {targetReachedCount} Target Hit
             </span>
           )}
           {stopLossCount > 0 && (
-            <span className="inline-flex items-center gap-1 bg-rose-950/80 text-rose-300 px-2 py-0.5 rounded text-[11px] font-bold border border-rose-800">
+            <span className="inline-flex items-center gap-1 bg-rose-50 dark:bg-rose-950/80 text-rose-700 dark:text-rose-300 px-2 py-0.5 rounded text-[11px] font-bold border border-rose-200 dark:border-rose-800">
               <AlertTriangle className="w-3 h-3" /> {stopLossCount} Stop Loss
             </span>
           )}
           {targetReachedCount === 0 && stopLossCount === 0 && (
-            <span className="text-emerald-400/90 text-xs flex items-center gap-1">
+            <span className="text-emerald-600 dark:text-emerald-400/90 text-xs flex items-center gap-1">
               ✓ All positions in safety zones
             </span>
           )}

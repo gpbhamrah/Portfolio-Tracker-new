@@ -179,7 +179,7 @@ export default function App() {
   }, []);
 
   // Save / Edit Holding handler
-  const handleSaveHolding = (newHolding: Holding) => {
+  const handleSaveHolding = async (newHolding: Holding) => {
     setHoldings((prev) => {
       const idx = prev.findIndex((h) => h.id === newHolding.id);
       if (idx >= 0) {
@@ -190,10 +190,39 @@ export default function App() {
       return [newHolding, ...prev];
     });
     showToast(`Saved position ${newHolding.name} (${newHolding.ticker})`);
+
+    // Instantly sync latest live quote in background
+    try {
+      const quotesMap = await fetchBatchQuotes([newHolding.ticker]);
+      const cleanSym = newHolding.ticker.toUpperCase();
+      const q =
+        quotesMap[cleanSym] ||
+        quotesMap[`${cleanSym}.NS`] ||
+        quotesMap[`${cleanSym}.BO`] ||
+        Object.values(quotesMap)[0];
+
+      if (q && q.price) {
+        setHoldings((prev) =>
+          prev.map((h) =>
+            h.id === newHolding.id
+              ? {
+                  ...h,
+                  cmp: q.price,
+                  dayChange: q.change ?? h.dayChange,
+                  dayChangePercent: q.changePercent ?? h.dayChangePercent,
+                  updatedAt: new Date().toISOString(),
+                }
+              : h
+          )
+        );
+      }
+    } catch {
+      // background sync error ignored
+    }
   };
 
   // Save / Edit Watchlist handler
-  const handleSaveWatchlist = (newItem: WatchlistItem) => {
+  const handleSaveWatchlist = async (newItem: WatchlistItem) => {
     setWatchlist((prev) => {
       const idx = prev.findIndex((w) => w.id === newItem.id);
       if (idx >= 0) {
@@ -204,6 +233,34 @@ export default function App() {
       return [newItem, ...prev];
     });
     showToast(`Added ${newItem.name} to Watchlist`);
+
+    // Instantly sync latest live quote in background
+    try {
+      const quotesMap = await fetchBatchQuotes([newItem.ticker]);
+      const cleanSym = newItem.ticker.toUpperCase();
+      const q =
+        quotesMap[cleanSym] ||
+        quotesMap[`${cleanSym}.NS`] ||
+        quotesMap[`${cleanSym}.BO`] ||
+        Object.values(quotesMap)[0];
+
+      if (q && q.price) {
+        setWatchlist((prev) =>
+          prev.map((w) =>
+            w.id === newItem.id
+              ? {
+                  ...w,
+                  cmp: q.price,
+                  dayChange: q.change ?? w.dayChange,
+                  dayChangePercent: q.changePercent ?? w.dayChangePercent,
+                }
+              : w
+          )
+        );
+      }
+    } catch {
+      // background sync error ignored
+    }
   };
 
   // Quick Inline Date Update handler

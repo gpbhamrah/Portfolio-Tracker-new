@@ -31,12 +31,23 @@ export function calcEMA(prices: number[], period: number): number {
  * Fetch quotes for multiple tickers in ONE fast batch request.
  */
 export async function fetchBatchQuotes(tickers: string[]): Promise<BatchQuotesResult> {
-  const uniqueTickers = Array.from(new Set(tickers.filter(Boolean)));
-  if (uniqueTickers.length === 0) return {};
+  const rawTickers = Array.from(new Set(tickers.filter(Boolean)));
+  if (rawTickers.length === 0) return {};
+
+  // Expand symbols (e.g. 'RELIANCE' -> 'RELIANCE', 'RELIANCE.NS')
+  const querySet = new Set<string>();
+  for (const t of rawTickers) {
+    querySet.add(t);
+    if (!t.includes('.') && !t.startsWith('^')) {
+      querySet.add(`${t}.NS`);
+      querySet.add(`${t}.BO`);
+    }
+  }
+  const uniqueTickers = Array.from(querySet);
 
   const now = Date.now();
   if (quotesCache && (now - quotesCache.timestamp) < CACHE_TTL_MS) {
-    const allPresent = uniqueTickers.every(t => quotesCache!.data[t.toUpperCase()] !== undefined);
+    const allPresent = rawTickers.every(t => quotesCache!.data[t.toUpperCase()] !== undefined);
     if (allPresent) {
       return quotesCache.data;
     }
@@ -44,7 +55,7 @@ export async function fetchBatchQuotes(tickers: string[]): Promise<BatchQuotesRe
 
   // 1. Try server-side API endpoint first (fastest, no CORS restrictions)
   try {
-    const res = await fetch(`/api/market-data?symbols=${encodeURIComponent(uniqueTickers.join(','))}`, {
+    const res = await fetch(`/api/market-data?symbols=${encodeURIComponent(rawTickers.join(','))}`, {
       headers: { 'Accept': 'application/json' }
     });
     if (res.ok) {
@@ -90,8 +101,8 @@ export async function fetchBatchQuotes(tickers: string[]): Promise<BatchQuotesRe
           const quotes = json?.quoteResponse?.result || [];
           for (const q of quotes) {
             const sym = (q.symbol || '').toUpperCase();
-            if (sym) {
-              result[sym] = {
+            if (sym && (q.regularMarketPrice !== undefined || q.previousClose !== undefined)) {
+              const qObj = {
                 price: q.regularMarketPrice ?? q.chartPreviousClose ?? q.previousClose ?? 0,
                 change: q.regularMarketChange ?? 0,
                 changePercent: q.regularMarketChangePercent ?? 0,
@@ -100,6 +111,11 @@ export async function fetchBatchQuotes(tickers: string[]): Promise<BatchQuotesRe
                 dayLow: q.regularMarketDayLow,
                 name: q.shortName || q.longName
               };
+              result[sym] = qObj;
+              if (sym.endsWith('.NS') || sym.endsWith('.BO')) {
+                const base = sym.slice(0, -3);
+                if (!result[base]) result[base] = qObj;
+              }
             }
           }
           return; // Batch successfully parsed
@@ -125,12 +141,17 @@ export async function fetchBatchQuotes(tickers: string[]): Promise<BatchQuotesRe
             if (meta) {
               const price = meta.regularMarketPrice || meta.chartPreviousClose || 0;
               const prev = meta.chartPreviousClose || price;
-              result[sym.toUpperCase()] = {
+              const qObj = {
                 price,
                 change: price - prev,
                 changePercent: prev ? ((price - prev) / prev) * 100 : 0,
                 previousClose: prev
               };
+              result[sym.toUpperCase()] = qObj;
+              if (sym.toUpperCase().endsWith('.NS') || sym.toUpperCase().endsWith('.BO')) {
+                const base = sym.toUpperCase().slice(0, -3);
+                if (!result[base]) result[base] = qObj;
+              }
             }
           }
         } catch {

@@ -1,0 +1,6 @@
+{
+  "name": "Personal Portfolio Tracker",
+  "description": "High-performance Indian & global stock portfolio tracker with lightning-fast batch CMP market data, purchase date & holding duration tracking, sector allocation, stop-loss / target alerts, and Vercel/GitHub deployment readiness.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

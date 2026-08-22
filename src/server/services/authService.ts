@@ -150,6 +150,78 @@ export class AuthService {
     const token = this.generateToken(user);
     return { user, token };
   }
+
+  public async changePassword(
+    userId: string,
+    currentPass: string,
+    newPass: string
+  ): Promise<boolean> {
+    const user = dbManager.users.get(userId);
+    if (!user) {
+      throw new Error('User not found.');
+    }
+
+    const isMatch = await this.comparePassword(currentPass, user.passwordHash);
+    if (!isMatch) {
+      throw new Error('Current password is incorrect.');
+    }
+
+    user.passwordHash = await this.hashPassword(newPass);
+    user.updatedAt = new Date();
+
+    dbManager.logAudit({
+      userId,
+      action: 'USER_PASSWORD_CHANGE',
+      resource: 'User',
+      details: 'Password was successfully updated',
+    });
+
+    return true;
+  }
+
+  public async deleteAccount(userId: string): Promise<boolean> {
+    const user = dbManager.users.get(userId);
+    if (!user) {
+      throw new Error('User not found.');
+    }
+
+    // Cascade delete portfolios, transactions, watchlists, alerts
+    for (const [id, port] of dbManager.portfolios.entries()) {
+      if (port.userId === userId) {
+        dbManager.portfolios.delete(id);
+      }
+    }
+
+    for (const [id, tx] of dbManager.transactions.entries()) {
+      if (tx.userId === userId) {
+        dbManager.transactions.delete(id);
+      }
+    }
+
+    for (const [id, wl] of dbManager.watchlists.entries()) {
+      if (wl.userId === userId) {
+        dbManager.watchlists.delete(id);
+      }
+    }
+
+    for (const [id, al] of dbManager.alerts.entries()) {
+      if (al.userId === userId) {
+        dbManager.alerts.delete(id);
+      }
+    }
+
+    dbManager.userSettings.delete(userId);
+    dbManager.users.delete(userId);
+
+    dbManager.logAudit({
+      userId,
+      action: 'USER_DELETE_ACCOUNT',
+      resource: 'User',
+      details: `User ${user.email} deleted their account`,
+    });
+
+    return true;
+  }
 }
 
 export const authService = new AuthService();

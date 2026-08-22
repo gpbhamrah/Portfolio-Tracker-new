@@ -1,4 +1,6 @@
 import { PrismaClient } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
+import pg from 'pg';
 import bcrypt from 'bcryptjs';
 
 // Types for the repository layer
@@ -211,7 +213,9 @@ class DatabaseManager {
   public async initialize(): Promise<void> {
     if (process.env.DATABASE_URL) {
       try {
-        this.prisma = new PrismaClient();
+        const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
+        const adapter = new PrismaPg(pool);
+        this.prisma = new PrismaClient({ adapter });
         await this.prisma.$connect();
         this.isPrismaConnected = true;
         console.log('✅ PostgreSQL Database connected successfully via Prisma');

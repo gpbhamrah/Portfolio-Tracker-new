@@ -72,3 +72,48 @@ userRouter.put('/settings', (req: AuthenticatedRequest, res) => {
     data: updated,
   });
 });
+
+// POST /api/user/change-password
+userRouter.post('/change-password', async (req: AuthenticatedRequest, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    if (!currentPassword || !newPassword || newPassword.length < 6) {
+      res.status(400).json({
+        success: false,
+        error: { code: 'INVALID_INPUT', message: 'New password must be at least 6 characters' },
+      });
+      return;
+    }
+
+    const { authService } = await import('../services/authService');
+    await authService.changePassword(req.user!.userId, currentPassword, newPassword);
+
+    res.json({
+      success: true,
+      data: { message: 'Password updated successfully' },
+    });
+  } catch (err: any) {
+    res.status(400).json({
+      success: false,
+      error: { code: 'PASSWORD_CHANGE_FAILED', message: err.message || 'Failed to update password' },
+    });
+  }
+});
+
+// DELETE /api/user/account
+userRouter.delete('/account', async (req: AuthenticatedRequest, res) => {
+  try {
+    const { authService } = await import('../services/authService');
+    await authService.deleteAccount(req.user!.userId);
+
+    res.json({
+      success: true,
+      data: { message: 'Account and associated portfolio data deleted successfully' },
+    });
+  } catch (err: any) {
+    res.status(400).json({
+      success: false,
+      error: { code: 'DELETE_FAILED', message: err.message || 'Failed to delete account' },
+    });
+  }
+});

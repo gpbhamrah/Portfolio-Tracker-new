@@ -29,7 +29,8 @@ import { AuthModal } from './components/AuthModal';
 import { AdminPanelModal } from './components/AdminPanelModal';
 import { AlertsModal } from './components/AlertsModal';
 import { BrokerImportModal } from './components/BrokerImportModal';
-import { Briefcase, Eye, Activity, PieChart, CheckCircle2, ShieldCheck } from 'lucide-react';
+import { UserSettingsModal } from './components/UserSettingsModal';
+import { Briefcase, Eye, Activity, PieChart, CheckCircle2, ShieldCheck, Database, ArrowRight, CloudUpload } from 'lucide-react';
 
 export default function App() {
   // Theme state
@@ -66,6 +67,8 @@ export default function App() {
   const [isAdminModalOpen, setIsAdminModalOpen] = useState(false);
   const [isAlertsModalOpen, setIsAlertsModalOpen] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [isUserSettingsModalOpen, setIsUserSettingsModalOpen] = useState(false);
+  const [dismissedMigrationBanner, setDismissedMigrationBanner] = useState(false);
 
   const [editingItem, setEditingItem] = useState<Holding | WatchlistItem | null>(null);
   const [modalType, setModalType] = useState<'holding' | 'watchlist'>('holding');
@@ -478,6 +481,7 @@ export default function App() {
           onOpenAdminModal={() => setIsAdminModalOpen(true)}
           onOpenAlertsModal={() => setIsAlertsModalOpen(true)}
           onOpenImportModal={() => setIsImportModalOpen(true)}
+          onOpenUserSettings={() => setIsUserSettingsModalOpen(true)}
           currentUser={currentUser}
           onLogout={handleLogout}
           portfolios={portfolios}
@@ -491,6 +495,38 @@ export default function App() {
 
         {/* Benchmark Bar (Nifty 50 + EMAs) */}
         <BenchmarkBar nifty={nifty} />
+
+        {/* Local Storage Data Migration Banner (Offered to logged in users who have un-synced local data) */}
+        {currentUser && holdings.length > 0 && !dismissedMigrationBanner && (
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-3.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/80 font-mono text-xs text-indigo-900 dark:text-indigo-200">
+            <div className="flex items-center gap-2.5">
+              <CloudUpload className="w-5 h-5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+              <div>
+                <span className="font-bold">Sync Browser Portfolio to Cloud:</span>{' '}
+                <span>
+                  You have {holdings.length} position{holdings.length > 1 ? 's' : ''} currently loaded in your browser session. Save them permanently to your account database.
+                </span>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto justify-end">
+              <button
+                type="button"
+                onClick={() => setDismissedMigrationBanner(true)}
+                className="px-2.5 py-1 rounded text-[11px] text-slate-600 dark:text-slate-400 hover:bg-slate-200/50 dark:hover:bg-slate-800/50 transition cursor-pointer"
+              >
+                Dismiss
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsImportModalOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-1 rounded font-bold bg-indigo-600 hover:bg-indigo-500 text-white transition cursor-pointer shadow-xs"
+              >
+                <span>Migrate to Database</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Key Metrics Stats Grid */}
         <PortfolioStats holdings={holdings} watchlist={watchlist} />
@@ -672,6 +708,14 @@ export default function App() {
           loadDatabasePortfolio(activePortfolioId);
           showToast('Transactions synced to database!');
         }}
+      />
+
+      {/* Account Settings & Security Modal */}
+      <UserSettingsModal
+        isOpen={isUserSettingsModalOpen}
+        onClose={() => setIsUserSettingsModalOpen(false)}
+        user={currentUser}
+        onUserLoggedOut={handleLogout}
       />
     </div>
   );

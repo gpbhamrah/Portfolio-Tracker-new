@@ -62,3 +62,12 @@ export const AlertSchema = z.object({
   notificationChannels: z.string().default('in_app'),
   notes: z.string().optional(),
 });
+
+export const ChangePasswordSchema = z.object({
+  currentPassword: z.string().min(1, 'Current password is required'),
+  newPassword: z.string().min(6, 'New password must be at least 6 characters'),
+});
+
+export const ForgotPasswordSchema = z.object({
+  email: z.string().email('Invalid email address format'),
+});

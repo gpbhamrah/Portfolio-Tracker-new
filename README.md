@@ -1,57 +1,113 @@
-# Personal Portfolio Tracker 📈
+# Full-Stack Multi-Tenant Indian Stock Portfolio Tracker 📈
 
-A high-performance stock & sector portfolio tracker designed for Indian (NSE/BSE) and global equity investors.
+A production-grade, multi-user portfolio tracker and risk analytics engine designed for Indian (NSE/BSE) and global equity investors.
+
+---
 
 ## 🚀 Key Features
 
-- **⚡ Lightning-Fast CMP Batch Fetching**: Fetches all quotes simultaneously in parallel batch requests (< 400ms instead of 45+ seconds of sequential requests).
-- **📅 Purchase Date & Holding Duration Tracking**:
-  - Save exact buy dates for every stock holding.
-  - Automatically calculate holding duration (Days / Months / Years).
-  - Categorize investments into **STCG (Short-Term Capital Gains)** vs **LTCG (Long-Term Capital Gains)** based on the 365-day Indian tax threshold.
-  - Sort portfolio by oldest or newest purchase date.
-- **📊 Technical & Benchmark Indicators**: Real-time Nifty 50 spot price with **20 EMA, 50 EMA, and 200 EMA** trend diagnostics.
-- **🎯 Dynamic Alerts**: Instant visual notifications and celebration when target prices are hit or stop-loss limits are breached.
-- **🥧 Sector Diversification**: Asset allocation pie chart and sector concentration warning (alerts when single sector exceeds 30%).
-- **💾 Local Storage Persistence & JSON/CSV Backups**: Automatically saved to your browser database, plus 1-click export/import.
-- **🌙 Dark / Light Mode**: Beautiful high-contrast theme toggle with remembered preference.
+- **⚡ Lightning-Fast Parallel CMP Sync (<400ms)**: Real-time quote synchronization via server-side cached requests with rate limiting and deduplication.
+- **🔐 Multi-User Authentication & IDOR Protection**: Secure JWT auth, bcrypt password hashing, account settings, password updates, and role-based permissions (`USER` / `ADMIN`).
+- **🗄️ Relational Cloud Database**: Persistent PostgreSQL database schema via Prisma ORM for users, portfolios, transactions, holdings, and watchlists.
+- **📂 Multi-Portfolio Management**: Create and switch between multiple portfolios (e.g. Core Wealth, Momentum Swing, Mutual Funds).
+- **📥 Broker Import & Local Storage Migration**: 1-click migration of browser local storage data to the database, plus CSV parsers for Zerodha, Groww, and Upstox tradebooks.
+- **📊 Quantitative & Tax Engine**:
+  - Exact FIFO transaction lot matching for true average buy price and realized gains.
+  - Indian Capital Gains Classification: STCG (<365 days @ 20%) vs LTCG (≥365 days @ 12.5% above ₹1.25L exemption).
+  - Annualized XIRR cash-flow calculation (Newton-Raphson method) and CAGR metrics.
+  - 20 EMA, 50 EMA, 200 EMA and 14-period RSI calculations.
+- **🛡️ Platform Admin Console**: View system-wide metrics, telemetry logs, and manage user accounts.
 
 ---
 
-## 🌐 Deploy to Vercel (Live Website)
+## 🛠️ Environment Variables Setup
 
-This project includes a `vercel.json` and is 100% ready to deploy to Vercel in 2 simple steps:
+Create a `.env` file in the project root:
 
-### Step 1: Push to GitHub
-```bash
-# Initialize git
-git init
-git add .
-git commit -m "feat: portfolio tracker with fast live CMP & date persistence"
+```env
+# Database Connection (Neon, Supabase, Vercel Postgres, or Cloud SQL)
+DATABASE_URL="postgresql://username:password@ep-host.region.aws.neon.tech/neondb?sslmode=require"
 
-# Link to your GitHub repository
-git branch -M main
-git remote add origin https://github.com/YOUR_USERNAME/YOUR_REPO_NAME.git
-git push -u origin main
+# JWT Secret for Session Tokens (Must be a long random string in production)
+JWT_SECRET="your-256-bit-jwt-secret-key-change-in-production"
+
+# Optional Port Override (Defaults to 3000)
+PORT=3000
 ```
 
-### Step 2: Import into Vercel
-1. Go to [vercel.com/new](https://vercel.com/new) and sign in with GitHub.
-2. Select your repository and click **Import**.
-3. Framework Preset: **Vite** (auto-configured).
-4. Click **Deploy**. Your portfolio is live in ~30 seconds!
+---
+
+## 🗄️ Database Setup & Prisma Migrations
+
+This project uses Prisma with PostgreSQL. You can use any managed Postgres provider:
+- [Neon](https://neon.tech) (Serverless Postgres, free tier available)
+- [Supabase](https://supabase.com) (Postgres database with pooling)
+- [Vercel Postgres](https://vercel.com/docs/storage/vercel-postgres)
+
+### 1. Initialize Prisma Migrations
+
+```bash
+# Push schema directly to your PostgreSQL database
+npx prisma db push
+
+# Generate the TypeScript Prisma Client
+npx prisma generate
+
+# (Optional) Open Prisma Studio UI to inspect your database tables
+npx prisma studio
+```
 
 ---
 
-## 🛠️ Local Development
+## 🏃 Local Development
 
 ```bash
 # Install dependencies
 npm install
 
-# Start development server
+# Run full-stack dev server (Express Backend + Vite Frontend)
 npm run dev
 
-# Build for production
+# Run TypeScript linter
+npm run lint
+
+# Build production bundle
 npm run build
+
+# Start production server
+npm start
 ```
+
+---
+
+## 🌐 Deploy to Vercel or Cloud Run
+
+### Option A: Deploy to Vercel
+
+1. Push your code to GitHub:
+   ```bash
+   git add .
+   git commit -m "feat: multi-user portfolio tracker"
+   git push origin main
+   ```
+2. Visit [vercel.com/new](https://vercel.com/new) and import your repository.
+3. Add the `DATABASE_URL` and `JWT_SECRET` in **Project Settings > Environment Variables**.
+4. Deploy!
+
+### Option B: Deploy with Docker / Cloud Run
+
+```bash
+# Build production bundle
+npm run build
+
+# Run the compiled self-contained bundle
+node dist/server.cjs
+```
+
+---
+
+## 🔒 Security & Architecture Overview
+
+1. **Strict User Scoping (IDOR-safe)**: All database queries and CRUD operations filter on `where: { userId: req.user.userId }` or verify portfolio ownership via `verifyPortfolioOwnership` middleware.
+2. **Server-Side Quote Cache**: Centralized quote cache prevents hitting external market API rate limits while maintaining <400ms latency for batch quote queries.
+3. **Password Security**: Passwords are salted and hashed with `bcryptjs` (salt rounds: 10). Session tokens expire in 7 days and contain minimal user identity claims.

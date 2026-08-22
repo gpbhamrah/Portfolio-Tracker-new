@@ -98,6 +98,23 @@ class ApiClient {
     this.setToken(null);
   }
 
+  public async changePassword(currentPassword: string, newPassword: string) {
+    return this.request<{ message: string }>('/api/user/change-password', {
+      method: 'POST',
+      body: JSON.stringify({ currentPassword, newPassword }),
+    });
+  }
+
+  public async deleteAccount() {
+    const res = await this.request<{ message: string }>('/api/user/account', {
+      method: 'DELETE',
+    });
+    if (res.success) {
+      this.setToken(null);
+    }
+    return res;
+  }
+
   // 2. Portfolios & Transactions
   public async getPortfolios() {
     return this.request<any[]>('/api/portfolios');

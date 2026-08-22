@@ -41,13 +41,16 @@ export class AuthService {
   public async register(
     email: string,
     password: string,
-    name: string
+    name?: string
   ): Promise<{ user: DbUser; token: string }> {
+    const normalizedEmail = email.trim().toLowerCase();
+    const resolvedName = name?.trim() || normalizedEmail.split('@')[0];
+
     const existing = Array.from(dbManager.users.values()).find(
-      (u) => u.email.toLowerCase() === email.toLowerCase()
+      (u) => u.email.toLowerCase() === normalizedEmail
     );
     if (existing) {
-      throw new Error('An account with this email address already exists.');
+      throw new Error('An account with this email address already exists. Please sign in instead.');
     }
 
     const passwordHash = await this.hashPassword(password);
@@ -55,9 +58,9 @@ export class AuthService {
 
     const newUser: DbUser = {
       id: userId,
-      email: email.toLowerCase(),
+      email: normalizedEmail,
       passwordHash,
-      name,
+      name: resolvedName,
       isActive: true,
       emailVerified: false,
       role: 'USER',

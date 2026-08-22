@@ -23,9 +23,24 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
     setIsLoading(true);
     setErrorMessage(null);
 
+    const trimmedEmail = email.trim().toLowerCase();
+    const trimmedName = name.trim();
+
+    if (!trimmedEmail) {
+      setErrorMessage('Please enter your email address.');
+      setIsLoading(false);
+      return;
+    }
+
+    if (password.length < 6) {
+      setErrorMessage('Password must be at least 6 characters.');
+      setIsLoading(false);
+      return;
+    }
+
     try {
       if (mode === 'login') {
-        const res = await apiClient.login(email, password);
+        const res = await apiClient.login(trimmedEmail, password);
         if (res.success && res.data?.user) {
           onSuccess(res.data.user);
           onClose();
@@ -33,7 +48,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
           setErrorMessage(res.error?.message || 'Login failed. Please check your credentials.');
         }
       } else {
-        const res = await apiClient.register(name, email, password);
+        const res = await apiClient.register(trimmedName || trimmedEmail.split('@')[0], trimmedEmail, password);
         if (res.success && res.data?.user) {
           onSuccess(res.data.user);
           onClose();
@@ -197,7 +212,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
                 Don't have an account?{' '}
                 <button
                   type="button"
-                  onClick={() => setMode('register')}
+                  onClick={() => {
+                    setMode('register');
+                    setErrorMessage(null);
+                  }}
                   className="text-indigo-600 dark:text-indigo-400 font-bold hover:underline cursor-pointer"
                 >
                   Sign Up
@@ -208,7 +226,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
                 Already have an account?{' '}
                 <button
                   type="button"
-                  onClick={() => setMode('login')}
+                  onClick={() => {
+                    setMode('login');
+                    setErrorMessage(null);
+                  }}
                   className="text-indigo-600 dark:text-indigo-400 font-bold hover:underline cursor-pointer"
                 >
                   Sign In

@@ -41,6 +41,7 @@ export interface SectorIndex {
   previousClose?: number;
   high52?: number;
   low52?: number;
+  unavailable?: boolean;
 }
 
 export interface MarketBenchmark {
@@ -53,6 +54,7 @@ export interface MarketBenchmark {
   ema50: number;
   ema200: number;
   lastUpdated?: string;
+  unavailable?: boolean;
 }
 
 export interface MarketDataResponse {

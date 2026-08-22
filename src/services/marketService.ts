@@ -16,212 +16,97 @@ export interface BatchQuotesResult {
 let quotesCache: { data: BatchQuotesResult; timestamp: number } | null = null;
 const CACHE_TTL_MS = 15000; // 15 seconds
 
+/**
+ * Standard EMA calculation helper
+ */
 export function calcEMA(prices: number[], period: number): number {
   if (!prices || prices.length === 0) return 0;
-  const slice = prices.slice(-period);
-  const k = 2 / (period + 1);
-  let ema = slice[0];
-  for (let i = 1; i < slice.length; i++) {
-    ema = slice[i] * k + ema * (1 - k);
+  const valid = prices.filter((p) => typeof p === 'number' && !isNaN(p) && p > 0);
+  if (valid.length < period) {
+    if (valid.length === 0) return 0;
+    const sum = valid.reduce((a, b) => a + b, 0);
+    return Math.round((sum / valid.length) * 100) / 100;
   }
-  return ema;
+  const k = 2 / (period + 1);
+  let ema = valid.slice(0, period).reduce((a, b) => a + b, 0) / period;
+  for (let i = period; i < valid.length; i++) {
+    ema = valid[i] * k + ema * (1 - k);
+  }
+  return Math.round(ema * 100) / 100;
 }
 
 /**
- * Fetch quotes for multiple tickers in ONE fast batch request.
+ * Fetch quotes for multiple tickers in ONE fast batch request via server API.
+ * Keeps market-data requests strictly server-side (no unreliable third-party CORS proxies).
  */
 export async function fetchBatchQuotes(tickers: string[]): Promise<BatchQuotesResult> {
   const rawTickers = Array.from(new Set(tickers.filter(Boolean)));
   if (rawTickers.length === 0) return {};
 
-  // Expand symbols (e.g. 'RELIANCE' -> 'RELIANCE', 'RELIANCE.NS')
-  const querySet = new Set<string>();
-  for (const t of rawTickers) {
-    querySet.add(t);
-    if (!t.includes('.') && !t.startsWith('^')) {
-      querySet.add(`${t}.NS`);
-      querySet.add(`${t}.BO`);
-    }
-  }
-  const uniqueTickers = Array.from(querySet);
-
   const now = Date.now();
-  if (quotesCache && (now - quotesCache.timestamp) < CACHE_TTL_MS) {
-    const allPresent = rawTickers.every(t => quotesCache!.data[t.toUpperCase()] !== undefined);
+  if (quotesCache && now - quotesCache.timestamp < CACHE_TTL_MS) {
+    const allPresent = rawTickers.every((t) => quotesCache!.data[t.toUpperCase()] !== undefined);
     if (allPresent) {
       return quotesCache.data;
     }
   }
 
-  // 1. Try server-side API endpoint first (fastest, no CORS restrictions)
   try {
-    const res = await fetch(`/api/market-data?symbols=${encodeURIComponent(rawTickers.join(','))}`, {
-      headers: { 'Accept': 'application/json' }
-    });
+    const res = await fetch(
+      `/api/market-data?symbols=${encodeURIComponent(rawTickers.join(','))}`,
+      {
+        headers: { Accept: 'application/json' },
+      }
+    );
+
     if (res.ok) {
       const data = await res.json();
       if (data.quotes && Object.keys(data.quotes).length > 0) {
         quotesCache = { data: data.quotes, timestamp: Date.now() };
         return data.quotes;
       }
+    } else {
+      console.warn(`Server endpoint /api/market-data returned HTTP ${res.status}`);
     }
   } catch (err) {
-    console.debug('Backend /api/market-data not available or offline, switching to client batch fetcher');
+    console.error('Failed to query server-side /api/market-data:', err);
   }
 
-  // 2. Client-side parallel batch fallback
-  const result: BatchQuotesResult = {};
-  const batchSize = 10;
-  const batches: string[][] = [];
-  for (let i = 0; i < uniqueTickers.length; i += batchSize) {
-    batches.push(uniqueTickers.slice(i, i + batchSize));
-  }
-
-  const batchPromises = batches.map(async (batch) => {
-    const symbolStr = batch.join(',');
-    const yahooUrl = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(symbolStr)}`;
-    
-    // Try multiple CORS proxy strategies with timeout
-    const proxies = [
-      `https://api.allorigins.win/raw?url=${encodeURIComponent(yahooUrl)}`,
-      `https://corsproxy.io/?${encodeURIComponent(yahooUrl)}`,
-      `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(yahooUrl)}`
-    ];
-
-    for (const proxyUrl of proxies) {
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 4000);
-        
-        const response = await fetch(proxyUrl, { signal: controller.signal });
-        clearTimeout(timeoutId);
-
-        if (response.ok) {
-          const json = await response.json();
-          const quotes = json?.quoteResponse?.result || [];
-          for (const q of quotes) {
-            const sym = (q.symbol || '').toUpperCase();
-            if (sym && (q.regularMarketPrice !== undefined || q.previousClose !== undefined)) {
-              const qObj = {
-                price: q.regularMarketPrice ?? q.chartPreviousClose ?? q.previousClose ?? 0,
-                change: q.regularMarketChange ?? 0,
-                changePercent: q.regularMarketChangePercent ?? 0,
-                previousClose: q.regularMarketPreviousClose ?? q.previousClose ?? 0,
-                dayHigh: q.regularMarketDayHigh,
-                dayLow: q.regularMarketDayLow,
-                name: q.shortName || q.longName
-              };
-              result[sym] = qObj;
-              if (sym.endsWith('.NS') || sym.endsWith('.BO')) {
-                const base = sym.slice(0, -3);
-                if (!result[base]) result[base] = qObj;
-              }
-            }
-          }
-          return; // Batch successfully parsed
-        }
-      } catch {
-        // Try next proxy
-      }
-    }
-
-    // Individual fallback chart queries for missing symbols in parallel
-    await Promise.allSettled(
-      batch.map(async (sym) => {
-        try {
-          const chartUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?interval=1d&range=5d`;
-          const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(chartUrl)}`;
-          const c = new AbortController();
-          const t = setTimeout(() => c.abort(), 3500);
-          const r = await fetch(proxyUrl, { signal: c.signal });
-          clearTimeout(t);
-          if (r.ok) {
-            const resJson = await r.json();
-            const meta = resJson?.chart?.result?.[0]?.meta;
-            if (meta) {
-              const price = meta.regularMarketPrice || meta.chartPreviousClose || 0;
-              const prev = meta.chartPreviousClose || price;
-              const qObj = {
-                price,
-                change: price - prev,
-                changePercent: prev ? ((price - prev) / prev) * 100 : 0,
-                previousClose: prev
-              };
-              result[sym.toUpperCase()] = qObj;
-              if (sym.toUpperCase().endsWith('.NS') || sym.toUpperCase().endsWith('.BO')) {
-                const base = sym.toUpperCase().slice(0, -3);
-                if (!result[base]) result[base] = qObj;
-              }
-            }
-          }
-        } catch {
-          // ignore
-        }
-      })
-    );
-  });
-
-  await Promise.allSettled(batchPromises);
-
-  if (Object.keys(result).length > 0) {
-    quotesCache = { data: result, timestamp: Date.now() };
-  }
-
-  return result;
+  return {};
 }
 
 /**
- * Fetch Benchmark (Nifty 50) and Sector Indices data with EMAs in parallel.
+ * Fetch Benchmark (Nifty 50) and Sector Indices with genuine calculated EMAs.
+ * Strictly uses server-side /api/indices-data.
  */
 export async function fetchIndicesData(
   sectorList: SectorIndex[]
-): Promise<{ nifty: MarketBenchmark | null; sectors: SectorIndex[] }> {
-  // 1. Try server endpoint first
+): Promise<{ nifty: MarketBenchmark | null; sectors: SectorIndex[]; isUnavailable?: boolean }> {
   try {
-    const res = await fetch('/api/indices-data');
+    const res = await fetch('/api/indices-data', {
+      headers: { Accept: 'application/json' },
+    });
+
     if (res.ok) {
       const data = await res.json();
-      if (data.nifty && data.sectors) {
-        return data;
+      if (data.nifty || (data.sectors && data.sectors.length > 0)) {
+        return {
+          nifty: data.nifty,
+          sectors: data.sectors || sectorList,
+          isUnavailable: false,
+        };
       }
+    } else {
+      console.warn(`Server endpoint /api/indices-data returned HTTP ${res.status}`);
     }
-  } catch {
-    // client fallback
+  } catch (err) {
+    console.error('Failed to query server-side /api/indices-data:', err);
   }
 
-  // 2. Client fallback
-  const allTickers = ['^NSEI', ...sectorList.map(s => s.ticker)];
-  const quotes = await fetchBatchQuotes(allTickers);
-
-  let updatedNifty: MarketBenchmark | null = null;
-  const niftyQuote = quotes['^NSEI'];
-  if (niftyQuote && niftyQuote.price) {
-    updatedNifty = {
-      symbol: '^NSEI',
-      name: 'NIFTY 50',
-      value: niftyQuote.price,
-      change: niftyQuote.change || 0,
-      changePercent: niftyQuote.changePercent || 0,
-      ema20: Math.round(niftyQuote.price * 0.994 * 100) / 100,
-      ema50: Math.round(niftyQuote.price * 0.985 * 100) / 100,
-      ema200: Math.round(niftyQuote.price * 0.940 * 100) / 100,
-      lastUpdated: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
-    };
-  }
-
-  const updatedSectors = sectorList.map(sec => {
-    const q = quotes[sec.ticker.toUpperCase()];
-    if (q && q.price) {
-      return {
-        ...sec,
-        value: q.price,
-        change: q.change || 0,
-        changePercent: q.changePercent || 0,
-        ema50: sec.ema50 || Math.round(q.price * 0.985 * 100) / 100
-      };
-    }
-    return sec;
-  });
-
-  return { nifty: updatedNifty, sectors: updatedSectors };
+  // If server is unavailable, mark indices as unavailable rather than faking prices
+  return {
+    nifty: null,
+    sectors: sectorList.map((s) => ({ ...s, unavailable: true })),
+    isUnavailable: true,
+  };
 }

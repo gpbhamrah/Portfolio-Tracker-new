@@ -1,6 +1,6 @@
 import React from 'react';
 import { SectorIndex } from '../types';
-import { ShieldCheck, ShieldAlert, TrendingUp, TrendingDown, Activity } from 'lucide-react';
+import { ShieldCheck, ShieldAlert, TrendingUp, TrendingDown, Activity, Clock } from 'lucide-react';
 
 interface SectorHealthTableProps {
   sectors: SectorIndex[];
@@ -16,7 +16,7 @@ export const SectorHealthTable: React.FC<SectorHealthTableProps> = ({ sectors })
             Sectoral Momentum & 50-EMA Diagnostics
           </h3>
           <p className="text-[11px] text-slate-500 dark:text-slate-400 font-mono mt-0.5">
-            Gauge institutional sectoral rotation by measuring index price relation against the 50-day EMA
+            Gauge institutional sectoral rotation by measuring index price relation against the authentic 50-day EMA
           </p>
         </div>
       </div>
@@ -35,7 +35,8 @@ export const SectorHealthTable: React.FC<SectorHealthTableProps> = ({ sectors })
           </thead>
           <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
             {sectors.map((sec) => {
-              const isBullish = sec.value >= sec.ema50;
+              const isUnavailable = sec.unavailable || !sec.value || sec.value <= 0;
+              const isBullish = !isUnavailable && sec.value >= sec.ema50;
               const isPositive = sec.change >= 0;
 
               return (
@@ -50,42 +51,69 @@ export const SectorHealthTable: React.FC<SectorHealthTableProps> = ({ sectors })
                     {sec.ticker}
                   </td>
                   <td className="p-3.5 text-right font-bold text-slate-900 dark:text-white font-mono">
-                    {sec.value ? sec.value.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : 'Loading...'}
+                    {isUnavailable ? (
+                      <span className="text-slate-400 dark:text-slate-500 font-normal">Sync pending</span>
+                    ) : (
+                      sec.value.toLocaleString('en-IN', {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })
+                    )}
                   </td>
                   <td className="p-3.5 text-right">
-                    <span
-                      className={`inline-flex items-center gap-0.5 font-bold font-mono ${
-                        isPositive ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'
-                      }`}
-                    >
-                      {isPositive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                      {isPositive ? '+' : ''}
-                      {sec.changePercent.toFixed(2)}%
-                    </span>
+                    {isUnavailable ? (
+                      <span className="text-slate-400 dark:text-slate-500 font-mono">--</span>
+                    ) : (
+                      <span
+                        className={`inline-flex items-center gap-0.5 font-bold font-mono ${
+                          isPositive
+                            ? 'text-emerald-600 dark:text-emerald-400'
+                            : 'text-rose-600 dark:text-rose-400'
+                        }`}
+                      >
+                        {isPositive ? (
+                          <TrendingUp className="w-3 h-3" />
+                        ) : (
+                          <TrendingDown className="w-3 h-3" />
+                        )}
+                        {isPositive ? '+' : ''}
+                        {sec.changePercent.toFixed(2)}%
+                      </span>
+                    )}
                   </td>
                   <td className="p-3.5 text-right text-slate-600 dark:text-slate-300 font-mono">
-                    {sec.ema50 ? sec.ema50.toLocaleString('en-IN', { maximumFractionDigits: 2 }) : '...'}
+                    {isUnavailable || !sec.ema50 ? (
+                      <span className="text-slate-400 dark:text-slate-500 font-mono">--</span>
+                    ) : (
+                      sec.ema50.toLocaleString('en-IN', { maximumFractionDigits: 2 })
+                    )}
                   </td>
                   <td className="p-3.5 text-center">
-                    <span
-                      className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded text-[11px] font-bold font-mono border ${
-                        isBullish
-                          ? 'bg-emerald-50 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
-                          : 'bg-rose-50 dark:bg-rose-950/80 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800'
-                      }`}
-                    >
-                      {isBullish ? (
-                        <>
-                          <ShieldCheck className="w-3.5 h-3.5" />
-                          <span>BULLISH ({'>'} 50 EMA)</span>
-                        </>
-                      ) : (
-                        <>
-                          <ShieldAlert className="w-3.5 h-3.5" />
-                          <span>BEARISH ({'<'} 50 EMA)</span>
-                        </>
-                      )}
-                    </span>
+                    {isUnavailable ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-mono text-slate-500 bg-slate-100 dark:bg-slate-800">
+                        <Clock className="w-3 h-3" /> Market data unavailable
+                      </span>
+                    ) : (
+                      <span
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded text-[11px] font-bold font-mono border ${
+                          isBullish
+                            ? 'bg-emerald-50 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
+                            : 'bg-rose-50 dark:bg-rose-950/80 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800'
+                        }`}
+                      >
+                        {isBullish ? (
+                          <>
+                            <ShieldCheck className="w-3.5 h-3.5" />
+                            <span>BULLISH ({'>'} 50 EMA)</span>
+                          </>
+                        ) : (
+                          <>
+                            <ShieldAlert className="w-3.5 h-3.5" />
+                            <span>BEARISH ({'<'} 50 EMA)</span>
+                          </>
+                        )}
+                      </span>
+                    )}
                   </td>
                 </tr>
               );
@@ -96,4 +124,3 @@ export const SectorHealthTable: React.FC<SectorHealthTableProps> = ({ sectors })
     </div>
   );
 };
-

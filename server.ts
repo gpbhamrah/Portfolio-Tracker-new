@@ -7,7 +7,7 @@ const PORT = 3000;
 
 app.use(express.json());
 
-// Server-side in-memory cache
+// In-memory cache for fast local responses
 interface CacheItem<T> {
   data: T;
   timestamp: number;
@@ -28,36 +28,51 @@ function setCached<T>(key: string, data: T): void {
   cache[key] = { data, timestamp: Date.now() };
 }
 
-function calcEMA(prices: number[], period: number): number {
+/**
+ * Standard technical analysis calculation of Exponential Moving Average (EMA).
+ * Seeds with the SMA of the initial `period` elements, then iteratively applies
+ * the smoothing factor k = 2 / (period + 1).
+ */
+export function calcRealEMA(prices: number[], period: number): number {
   if (!prices || prices.length === 0) return 0;
-  const slice = prices.slice(-period);
-  const k = 2 / (period + 1);
-  let ema = slice[0];
-  for (let i = 1; i < slice.length; i++) {
-    ema = slice[i] * k + ema * (1 - k);
+  const validPrices = prices.filter((p) => typeof p === 'number' && !isNaN(p) && p > 0);
+  if (validPrices.length < period) {
+    if (validPrices.length === 0) return 0;
+    const sum = validPrices.reduce((a, b) => a + b, 0);
+    return Math.round((sum / validPrices.length) * 100) / 100;
   }
-  return ema;
+
+  const k = 2 / (period + 1);
+  let ema = validPrices.slice(0, period).reduce((a, b) => a + b, 0) / period;
+  for (let i = period; i < validPrices.length; i++) {
+    ema = validPrices[i] * k + ema * (1 - k);
+  }
+  return Math.round(ema * 100) / 100;
 }
 
-// Health check
+// 1. Health check endpoint
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', time: new Date().toISOString() });
+  res.json({
+    status: 'ok',
+    service: 'investing-journal-server',
+    time: new Date().toISOString(),
+  });
 });
 
-// Fast batch quotes endpoint
+// 2. Batch market data quotes endpoint
 app.get('/api/market-data', async (req, res) => {
   try {
     const symbolsParam = (req.query.symbols as string) || '';
     const rawSymbols = symbolsParam
       .split(',')
-      .map(s => s.trim())
+      .map((s) => s.trim())
       .filter(Boolean);
 
     if (rawSymbols.length === 0) {
       return res.json({ quotes: {}, timestamp: Date.now() });
     }
 
-    // Expand symbols (e.g. 'RELIANCE' -> 'RELIANCE', 'RELIANCE.NS')
+    // Expand symbols with exchange extensions
     const querySymbolsSet = new Set<string>();
     for (const s of rawSymbols) {
       querySymbolsSet.add(s);
@@ -74,54 +89,70 @@ app.get('/api/market-data', async (req, res) => {
       return res.json(cached);
     }
 
-    const quoteUrl = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(querySymbols.join(','))}`;
-    const response = await fetch(quoteUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'application/json',
-      },
-    });
-
     const quotes: Record<string, any> = {};
 
-    if (response.ok) {
-      const data: any = await response.json();
-      const results = data?.quoteResponse?.result || [];
-      for (const item of results) {
-        const sym = (item.symbol || '').toUpperCase();
-        if (sym && (item.regularMarketPrice !== undefined || item.chartPreviousClose !== undefined || item.previousClose !== undefined)) {
-          const qData = {
-            price: item.regularMarketPrice ?? item.chartPreviousClose ?? item.previousClose ?? 0,
-            change: item.regularMarketChange ?? 0,
-            changePercent: item.regularMarketChangePercent ?? 0,
-            previousClose: item.regularMarketPreviousClose ?? item.previousClose ?? 0,
-            dayHigh: item.regularMarketDayHigh,
-            dayLow: item.regularMarketDayLow,
-            volume: item.regularMarketVolume,
-            name: item.shortName || item.longName,
-          };
-          quotes[sym] = qData;
+    try {
+      const quoteUrl = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(
+        querySymbols.join(',')
+      )}`;
+      const response = await fetch(quoteUrl, {
+        headers: {
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+          Accept: 'application/json',
+        },
+      });
 
-          // Also map base ticker if sym is like 'RELIANCE.NS'
-          if (sym.endsWith('.NS') || sym.endsWith('.BO')) {
-            const base = sym.slice(0, -3);
-            if (!quotes[base]) {
-              quotes[base] = qData;
+      if (response.ok) {
+        const data: any = await response.json();
+        const results = data?.quoteResponse?.result || [];
+        for (const item of results) {
+          const sym = (item.symbol || '').toUpperCase();
+          if (
+            sym &&
+            (item.regularMarketPrice !== undefined ||
+              item.chartPreviousClose !== undefined ||
+              item.previousClose !== undefined)
+          ) {
+            const qData = {
+              price: item.regularMarketPrice ?? item.chartPreviousClose ?? item.previousClose ?? 0,
+              change: item.regularMarketChange ?? 0,
+              changePercent: item.regularMarketChangePercent ?? 0,
+              previousClose: item.regularMarketPreviousClose ?? item.previousClose ?? 0,
+              dayHigh: item.regularMarketDayHigh,
+              dayLow: item.regularMarketDayLow,
+              volume: item.regularMarketVolume,
+              name: item.shortName || item.longName,
+            };
+            quotes[sym] = qData;
+
+            if (sym.endsWith('.NS') || sym.endsWith('.BO')) {
+              const base = sym.slice(0, -3);
+              if (!quotes[base]) {
+                quotes[base] = qData;
+              }
             }
           }
         }
       }
+    } catch (e) {
+      console.warn('Batch quote error in server.ts:', e);
     }
 
-    // For any missing symbols, fetch via fast chart endpoint in parallel
-    const missing = querySymbols.filter(s => !quotes[s.toUpperCase()]);
+    // Individual fallback for missing symbols
+    const missing = querySymbols.filter((s) => !quotes[s.toUpperCase()]);
     if (missing.length > 0) {
       await Promise.allSettled(
-        missing.map(async sym => {
+        missing.map(async (sym) => {
           try {
-            const chartUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?interval=1d&range=5d`;
+            const chartUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(
+              sym
+            )}?interval=1d&range=5d`;
             const chartRes = await fetch(chartUrl, {
-              headers: { 'User-Agent': 'Mozilla/5.0' },
+              headers: {
+                'User-Agent':
+                  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+              },
             });
             if (chartRes.ok) {
               const chartData: any = await chartRes.json();
@@ -145,7 +176,7 @@ app.get('/api/market-data', async (req, res) => {
                 }
               }
             }
-          } catch (e) {
+          } catch {
             // ignore
           }
         })
@@ -161,7 +192,7 @@ app.get('/api/market-data', async (req, res) => {
   }
 });
 
-// Indices and EMA endpoint
+// 3. Benchmark indices and real EMA diagnostics endpoint
 app.get('/api/indices-data', async (req, res) => {
   try {
     const cacheKey = 'indices_data_full';
@@ -185,25 +216,24 @@ app.get('/api/indices-data', async (req, res) => {
       { name: 'Nifty Media', ticker: '^CNXMEDIA', category: 'Media' },
     ];
 
-    // 1. Fetch benchmark Nifty 50 with 1-year history for 20, 50, 200 EMAs
-    let niftyData = {
-      symbol: '^NSEI',
-      name: 'NIFTY 50',
-      value: 24350.5,
-      change: 112.3,
-      changePercent: 0.46,
-      ema20: 24210.15,
-      ema50: 24010.2,
-      ema200: 22890.75,
-      lastUpdated: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
-    };
-
+    // Benchmark Nifty 50 with 1y history for 20, 50, 200 EMA
+    let niftyData = null;
     try {
-      const niftyChartUrl = 'https://query1.finance.yahoo.com/v8/finance/chart/%5ENSEI?interval=1d&range=1y';
-      const nRes = await fetch(niftyChartUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+      const niftyChartUrl =
+        'https://query1.finance.yahoo.com/v8/finance/chart/%5ENSEI?interval=1d&range=1y';
+      const nRes = await fetch(niftyChartUrl, {
+        headers: {
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        },
+      });
+
       if (nRes.ok) {
         const nJson: any = await nRes.json();
-        const quotes = (nJson?.chart?.result?.[0]?.indicators?.quote?.[0]?.close || []).filter((v: any) => v != null);
+        const quotes: number[] = (
+          nJson?.chart?.result?.[0]?.indicators?.quote?.[0]?.close || []
+        ).filter((v: any) => typeof v === 'number' && !isNaN(v) && v > 0);
+
         if (quotes.length >= 2) {
           const currentVal = quotes[quotes.length - 1];
           const prevClose = quotes[quotes.length - 2];
@@ -216,25 +246,40 @@ app.get('/api/indices-data', async (req, res) => {
             value: Math.round(currentVal * 100) / 100,
             change: Math.round(chg * 100) / 100,
             changePercent: Math.round(chgPct * 100) / 100,
-            ema20: Math.round(calcEMA(quotes, 20) * 100) / 100,
-            ema50: Math.round(calcEMA(quotes, 50) * 100) / 100,
-            ema200: Math.round(calcEMA(quotes, 200) * 100) / 100,
-            lastUpdated: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+            ema20: calcRealEMA(quotes, 20),
+            ema50: calcRealEMA(quotes, 50),
+            ema200: calcRealEMA(quotes, 200),
+            lastUpdated: new Date().toLocaleTimeString('en-IN', {
+              hour: '2-digit',
+              minute: '2-digit',
+            }),
+            unavailable: false,
           };
         }
       }
     } catch (e) {
-      console.warn('Failed to fetch real-time Nifty 50 history, using fallback');
+      console.warn('Real Nifty 50 history fetch failed:', e);
     }
 
-    // 2. Fetch sector data in parallel
-    const sectorPromises = sectorTickers.map(async sec => {
+    // Sector indices with 6mo history for real EMA 50
+    const sectorPromises = sectorTickers.map(async (sec) => {
       try {
-        const chartUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sec.ticker)}?interval=1d&range=6mo`;
-        const res = await fetch(chartUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+        const chartUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(
+          sec.ticker
+        )}?interval=1d&range=6mo`;
+        const res = await fetch(chartUrl, {
+          headers: {
+            'User-Agent':
+              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+          },
+        });
+
         if (res.ok) {
           const json: any = await res.json();
-          const quotes = (json?.chart?.result?.[0]?.indicators?.quote?.[0]?.close || []).filter((v: any) => v != null);
+          const quotes: number[] = (
+            json?.chart?.result?.[0]?.indicators?.quote?.[0]?.close || []
+          ).filter((v: any) => typeof v === 'number' && !isNaN(v) && v > 0);
+
           if (quotes.length >= 2) {
             const currentVal = quotes[quotes.length - 1];
             const prevClose = quotes[quotes.length - 2];
@@ -245,7 +290,8 @@ app.get('/api/indices-data', async (req, res) => {
               value: Math.round(currentVal * 100) / 100,
               change: Math.round(chg * 100) / 100,
               changePercent: Math.round(chgPct * 100) / 100,
-              ema50: Math.round(calcEMA(quotes, 50) * 100) / 100,
+              ema50: calcRealEMA(quotes, 50),
+              unavailable: false,
             };
           }
         }
@@ -258,15 +304,21 @@ app.get('/api/indices-data', async (req, res) => {
         change: 0,
         changePercent: 0,
         ema50: 0,
+        unavailable: true,
       };
     });
 
     const sectors = await Promise.all(sectorPromises);
-    const payload = { nifty: niftyData, sectors, timestamp: Date.now() };
+    const payload = {
+      nifty: niftyData,
+      sectors,
+      timestamp: Date.now(),
+      status: niftyData ? 'success' : 'partial',
+    };
     setCached(cacheKey, payload);
     return res.json(payload);
   } catch (error: any) {
-    return res.status(500).json({ error: error.message });
+    return res.status(500).json({ error: error.message, nifty: null, sectors: [] });
   }
 });
 

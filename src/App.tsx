@@ -14,7 +14,9 @@ import {
   saveWatchlist 
 } from './utils/storage';
 import { fetchBatchQuotes, fetchIndicesData } from './services/marketService';
+import { apiClient, AuthUser } from './services/apiClient';
 import { Header } from './components/Header';
+import { PortfolioMeta } from './components/PortfolioSwitcher';
 import { BenchmarkBar } from './components/BenchmarkBar';
 import { PortfolioStats } from './components/PortfolioStats';
 import { HoldingsTable } from './components/HoldingsTable';
@@ -23,7 +25,11 @@ import { SectorHealthTable } from './components/SectorHealthTable';
 import { PortfolioAnalytics } from './components/PortfolioAnalytics';
 import { ItemModal } from './components/ItemModal';
 import { DeployModal } from './components/DeployModal';
-import { Briefcase, Eye, Activity, PieChart, CheckCircle2, AlertCircle } from 'lucide-react';
+import { AuthModal } from './components/AuthModal';
+import { AdminPanelModal } from './components/AdminPanelModal';
+import { AlertsModal } from './components/AlertsModal';
+import { BrokerImportModal } from './components/BrokerImportModal';
+import { Briefcase, Eye, Activity, PieChart, CheckCircle2, ShieldCheck } from 'lucide-react';
 
 export default function App() {
   // Theme state
@@ -32,6 +38,11 @@ export default function App() {
     if (saved !== null) return saved === 'true';
     return window.matchMedia('(prefers-color-scheme: dark)').matches;
   });
+
+  // User Auth State
+  const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
+  const [portfolios, setPortfolios] = useState<PortfolioMeta[]>([]);
+  const [activePortfolioId, setActivePortfolioId] = useState<string>('portfolio-demo-main');
 
   // Data states
   const [holdings, setHoldings] = useState<Holding[]>(() => loadHoldings());
@@ -51,6 +62,11 @@ export default function App() {
   // Modals
   const [isItemModalOpen, setIsItemModalOpen] = useState(false);
   const [isDeployModalOpen, setIsDeployModalOpen] = useState(false);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [isAdminModalOpen, setIsAdminModalOpen] = useState(false);
+  const [isAlertsModalOpen, setIsAlertsModalOpen] = useState(false);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+
   const [editingItem, setEditingItem] = useState<Holding | WatchlistItem | null>(null);
   const [modalType, setModalType] = useState<'holding' | 'watchlist'>('holding');
 
@@ -79,6 +95,88 @@ export default function App() {
     setTimeout(() => {
       setToastMessage(null);
     }, 3500);
+  };
+
+  // Check login state on mount
+  useEffect(() => {
+    const checkAuth = async () => {
+      const res = await apiClient.getMe();
+      if (res.success && res.data?.user) {
+        setCurrentUser(res.data.user);
+        loadUserPortfolios(res.data.user.id);
+      }
+    };
+    checkAuth();
+  }, []);
+
+  const loadUserPortfolios = async (userId: string) => {
+    try {
+      const res = await apiClient.getPortfolios();
+      if (res.success && res.data && res.data.length > 0) {
+        setPortfolios(res.data);
+        const defaultPort = res.data.find((p: any) => p.isDefault) || res.data[0];
+        setActivePortfolioId(defaultPort.id);
+        loadDatabasePortfolio(defaultPort.id);
+      }
+    } catch (err) {
+      console.error('Failed to load user portfolios', err);
+    }
+  };
+
+  const loadDatabasePortfolio = async (portfolioId: string) => {
+    try {
+      const res = await apiClient.getPortfolioSummary(portfolioId);
+      if (res.success && res.data?.holdings) {
+        const dbHoldings: Holding[] = res.data.holdings.map((h: any) => ({
+          id: h.id,
+          name: h.name,
+          ticker: h.ticker,
+          sector: h.sector,
+          qty: h.qty,
+          buyPrice: h.buyPrice,
+          buyDate: h.buyDate || new Date().toISOString().slice(0, 10),
+          cmp: h.cmp,
+          sellPrice: h.sellPrice || Math.round(h.buyPrice * 1.2 * 100) / 100,
+          stopLoss: h.stopLoss || Math.round(h.buyPrice * 0.9 * 100) / 100,
+          notes: h.notes,
+          dayChange: h.dayChange,
+          dayChangePercent: h.dayChangePercent,
+          updatedAt: new Date().toISOString(),
+        }));
+        if (dbHoldings.length > 0) {
+          setHoldings(dbHoldings);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load portfolio details from database', err);
+    }
+  };
+
+  const handleCreatePortfolio = async (name: string, description?: string) => {
+    try {
+      const res = await apiClient.createPortfolio(name, description);
+      if (res.success && res.data) {
+        setPortfolios((prev) => [...prev, res.data]);
+        setActivePortfolioId(res.data.id);
+        setHoldings([]);
+        showToast(`Created portfolio "${name}"`);
+      }
+    } catch (err) {
+      alert('Failed to create portfolio');
+    }
+  };
+
+  const handleSelectPortfolio = (id: string) => {
+    setActivePortfolioId(id);
+    loadDatabasePortfolio(id);
+    showToast('Switched portfolio');
+  };
+
+  const handleLogout = async () => {
+    await apiClient.logout();
+    setCurrentUser(null);
+    setPortfolios([]);
+    showToast('Signed out');
   };
 
   /**
@@ -190,6 +288,21 @@ export default function App() {
       return [newHolding, ...prev];
     });
     showToast(`Saved position ${newHolding.name} (${newHolding.ticker})`);
+
+    // If logged in, also push transaction to server
+    if (currentUser) {
+      apiClient.addTransaction({
+        portfolioId: activePortfolioId,
+        symbol: newHolding.ticker,
+        name: newHolding.name,
+        sector: newHolding.sector,
+        type: 'BUY',
+        quantity: newHolding.qty,
+        price: newHolding.buyPrice,
+        date: newHolding.buyDate,
+        notes: newHolding.notes,
+      }).catch((e) => console.warn('Server transaction record notice:', e));
+    }
 
     // Instantly sync latest live quote in background
     try {
@@ -329,7 +442,6 @@ export default function App() {
     setHoldings(importedHoldings);
     setWatchlist(importedWatchlist);
     showToast('Portfolio imported successfully!');
-    // Trigger price update for new symbols
     setTimeout(() => {
       handleFetchAllMarketData();
     }, 200);
@@ -362,6 +474,16 @@ export default function App() {
             setIsItemModalOpen(true);
           }}
           onOpenDeployModal={() => setIsDeployModalOpen(true)}
+          onOpenAuthModal={() => setIsAuthModalOpen(true)}
+          onOpenAdminModal={() => setIsAdminModalOpen(true)}
+          onOpenAlertsModal={() => setIsAlertsModalOpen(true)}
+          onOpenImportModal={() => setIsImportModalOpen(true)}
+          currentUser={currentUser}
+          onLogout={handleLogout}
+          portfolios={portfolios}
+          activePortfolioId={activePortfolioId}
+          onSelectPortfolio={handleSelectPortfolio}
+          onCreatePortfolio={handleCreatePortfolio}
           holdings={holdings}
           watchlist={watchlist}
           onImportData={handleImportData}
@@ -515,6 +637,41 @@ export default function App() {
       <DeployModal
         isOpen={isDeployModalOpen}
         onClose={() => setIsDeployModalOpen(false)}
+      />
+
+      {/* Multi-User Auth Modal */}
+      <AuthModal
+        isOpen={isAuthModalOpen}
+        onClose={() => setIsAuthModalOpen(false)}
+        onSuccess={(user) => {
+          setCurrentUser(user);
+          loadUserPortfolios(user.id);
+          showToast(`Welcome, ${user.name}!`);
+        }}
+      />
+
+      {/* Platform Admin Console Modal */}
+      <AdminPanelModal
+        isOpen={isAdminModalOpen}
+        onClose={() => setIsAdminModalOpen(false)}
+      />
+
+      {/* Alerts & Triggers Modal */}
+      <AlertsModal
+        isOpen={isAlertsModalOpen}
+        onClose={() => setIsAlertsModalOpen(false)}
+      />
+
+      {/* Broker CSV Import Modal */}
+      <BrokerImportModal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+        portfolioId={activePortfolioId}
+        currentLocalHoldings={holdings}
+        onImportSuccess={() => {
+          loadDatabasePortfolio(activePortfolioId);
+          showToast('Transactions synced to database!');
+        }}
       />
     </div>
   );

@@ -6,14 +6,20 @@ import {
   Upload, 
   Moon, 
   Sun, 
-  TrendingUp, 
   Github, 
   FileSpreadsheet, 
-  Zap,
-  Globe
+  Bell,
+  ShieldAlert,
+  User,
+  LogOut,
+  LogIn,
+  Layers,
+  Database
 } from 'lucide-react';
 import { Holding, WatchlistItem } from '../types';
 import { exportToCSV, exportToJSON } from '../utils/storage';
+import { AuthUser } from '../services/apiClient';
+import { PortfolioSwitcher, PortfolioMeta } from './PortfolioSwitcher';
 
 interface HeaderProps {
   darkMode: boolean;
@@ -24,6 +30,16 @@ interface HeaderProps {
   onFetchPrices: () => void;
   onOpenAddModal: () => void;
   onOpenDeployModal: () => void;
+  onOpenAuthModal: () => void;
+  onOpenAdminModal: () => void;
+  onOpenAlertsModal: () => void;
+  onOpenImportModal: () => void;
+  currentUser: AuthUser | null;
+  onLogout: () => void;
+  portfolios: PortfolioMeta[];
+  activePortfolioId: string;
+  onSelectPortfolio: (id: string) => void;
+  onCreatePortfolio: (name: string, description?: string) => Promise<void>;
   holdings: Holding[];
   watchlist: WatchlistItem[];
   onImportData: (holdings: Holding[], watchlist: WatchlistItem[]) => void;
@@ -38,6 +54,16 @@ export const Header: React.FC<HeaderProps> = ({
   onFetchPrices,
   onOpenAddModal,
   onOpenDeployModal,
+  onOpenAuthModal,
+  onOpenAdminModal,
+  onOpenAlertsModal,
+  onOpenImportModal,
+  currentUser,
+  onLogout,
+  portfolios,
+  activePortfolioId,
+  onSelectPortfolio,
+  onCreatePortfolio,
   holdings,
   watchlist,
   onImportData,
@@ -75,10 +101,10 @@ export const Header: React.FC<HeaderProps> = ({
   };
 
   return (
-    <header className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-5 sm:p-6 shadow-sm dark:shadow-lg dark:shadow-black/20 transition-colors duration-200">
+    <header className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-4 sm:p-5 shadow-sm dark:shadow-lg dark:shadow-black/20 transition-colors duration-200">
       <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
-        {/* Left Branding - Geometric Balance style */}
-        <div className="flex items-center gap-3.5">
+        {/* Left Branding */}
+        <div className="flex flex-wrap items-center gap-3.5">
           <div className="w-9 h-9 bg-indigo-600 rounded-sm flex items-center justify-center font-bold text-white text-base shadow-sm font-mono">
             P
           </div>
@@ -90,40 +116,65 @@ export const Header: React.FC<HeaderProps> = ({
               <span className="text-slate-400 dark:text-slate-500 font-mono text-xs font-normal">v2.4.0</span>
               <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-0.5 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded text-[11px] font-mono text-slate-700 dark:text-slate-300">
                 <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
-                <span>LIVE CMP</span>
+                <span>POSTGRES + LIVE CMP</span>
               </div>
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              High-frequency stock & sector portfolio manager with holding dates, live CMP & Vercel edge deployment
+              Multi-user Indian equity platform with database persistence, live quotes & FIFO metrics
             </p>
           </div>
+
+          {/* Portfolio Switcher Dropdown */}
+          {portfolios.length > 0 && (
+            <div className="ml-0 sm:ml-2">
+              <PortfolioSwitcher
+                portfolios={portfolios}
+                activePortfolioId={activePortfolioId}
+                onSelectPortfolio={onSelectPortfolio}
+                onCreatePortfolio={onCreatePortfolio}
+              />
+            </div>
+          )}
         </div>
 
         {/* Right Status Badges & Controls */}
         <div className="flex flex-wrap items-center gap-2 sm:gap-2.5 w-full lg:w-auto justify-start lg:justify-end">
-          {/* Vercel & GitHub Telemetry Badges */}
-          <div className="hidden xl:flex items-center gap-2 px-3 py-1.5 bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/80 rounded text-xs font-mono text-slate-700 dark:text-slate-300">
-            <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
-            <span>GITHUB: <span className="text-slate-900 dark:text-slate-100 font-semibold">main</span></span>
-          </div>
+          {/* Admin Console Button if ADMIN */}
+          {currentUser?.role === 'ADMIN' && (
+            <button
+              id="admin-console-btn"
+              onClick={onOpenAdminModal}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs font-mono font-bold bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800 hover:bg-rose-100 dark:hover:bg-rose-900/50 transition cursor-pointer"
+              title="Open Platform Telemetry & Admin Console"
+            >
+              <ShieldAlert className="w-3.5 h-3.5" />
+              <span>ADMIN</span>
+            </button>
+          )}
 
-          <div className="hidden xl:flex items-center gap-2 px-3 py-1.5 bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/80 rounded text-xs font-mono text-slate-700 dark:text-slate-300">
-            <div className="w-2 h-2 rounded-full bg-indigo-500"></div>
-            <span>VERCEL: <span className="text-slate-900 dark:text-slate-100 font-semibold">edge</span></span>
-          </div>
+          {/* Alerts Trigger Button */}
+          <button
+            id="alerts-btn"
+            onClick={onOpenAlertsModal}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs font-mono font-medium bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 transition cursor-pointer"
+            title="Manage Price Alerts & Triggers"
+          >
+            <Bell className="w-3.5 h-3.5 text-amber-500" />
+            <span>ALERTS</span>
+          </button>
 
           {/* Fast Live CMP Fetch Button */}
           <button
             id="fetch-cmp-btn"
             onClick={onFetchPrices}
             disabled={isLoading}
-            className="flex items-center gap-2 px-3.5 py-2 rounded text-xs font-bold uppercase tracking-wider bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white shadow-sm transition disabled:opacity-60 cursor-pointer"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white shadow-sm transition disabled:opacity-60 cursor-pointer"
             title="Fetches all market quotes in a single parallel batch (<400ms)"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
             <span>{isLoading ? 'SYNCING...' : 'FETCH CMP'}</span>
             {lastFetchDuration !== null && !isLoading && (
-              <span className="px-1.5 py-0.2 text-[10px] bg-emerald-800/80 rounded font-mono">
+              <span className="px-1 py-0.2 text-[10px] bg-emerald-800/80 rounded font-mono">
                 {lastFetchDuration < 1000 ? `${lastFetchDuration}ms` : `${(lastFetchDuration / 1000).toFixed(1)}s`}
               </span>
             )}
@@ -133,21 +184,32 @@ export const Header: React.FC<HeaderProps> = ({
           <button
             id="add-item-btn"
             onClick={onOpenAddModal}
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded text-xs font-bold uppercase tracking-wider bg-indigo-600 hover:bg-indigo-500 text-white shadow-sm transition cursor-pointer"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider bg-indigo-600 hover:bg-indigo-500 text-white shadow-sm transition cursor-pointer"
           >
             <Plus className="w-3.5 h-3.5" />
             <span>ADD STOCK</span>
           </button>
 
-          {/* Deploy to GitHub & Vercel */}
+          {/* Broker CSV / Statement Import */}
+          <button
+            id="broker-import-btn"
+            onClick={onOpenImportModal}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs font-semibold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700 transition cursor-pointer font-mono"
+            title="Import Zerodha, Groww, Upstox CSV or Migrate Local Storage"
+          >
+            <Database className="w-3.5 h-3.5 text-emerald-500" />
+            <span>IMPORT</span>
+          </button>
+
+          {/* Deploy Modal Guide */}
           <button
             id="deploy-vercel-btn"
             onClick={onOpenDeployModal}
-            className="flex items-center gap-1.5 px-3 py-2 rounded text-xs font-semibold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700 transition cursor-pointer"
-            title="Guide to deploy live on Vercel and push to GitHub"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs font-semibold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700 transition cursor-pointer font-mono"
+            title="Vercel & GitHub Deployment Specs"
           >
             <Github className="w-3.5 h-3.5 text-indigo-500" />
-            <span>DEPLOY VERCEL</span>
+            <span>DEPLOY</span>
           </button>
 
           {/* Export CSV / JSON Group */}
@@ -155,49 +217,59 @@ export const Header: React.FC<HeaderProps> = ({
             <button
               id="export-csv-btn"
               onClick={() => exportToCSV(holdings)}
-              className="p-1.5 px-2.5 rounded text-xs font-mono font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-white transition flex items-center gap-1 cursor-pointer"
-              title="Export CSV spreadsheet with Buy Dates & P/L"
+              className="p-1 px-2 rounded text-xs font-mono font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-white transition flex items-center gap-1 cursor-pointer"
+              title="Export CSV spreadsheet"
             >
-              <FileSpreadsheet className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
+              <FileSpreadsheet className="w-3.5 h-3.5 text-slate-500" />
               <span>CSV</span>
             </button>
             <button
               id="export-json-btn"
               onClick={() => exportToJSON(holdings, watchlist)}
-              className="p-1.5 px-2.5 rounded text-xs font-mono font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-white transition flex items-center gap-1 cursor-pointer"
+              className="p-1 px-2 rounded text-xs font-mono font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-white transition flex items-center gap-1 cursor-pointer"
               title="Export JSON backup"
             >
-              <Download className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
+              <Download className="w-3.5 h-3.5 text-slate-500" />
               <span>JSON</span>
             </button>
           </div>
-
-          {/* Import JSON */}
-          <button
-            id="import-json-btn"
-            onClick={() => fileInputRef.current?.click()}
-            className="p-2 rounded bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 transition cursor-pointer"
-            title="Import JSON backup"
-          >
-            <Upload className="w-3.5 h-3.5" />
-          </button>
-          <input
-            type="file"
-            ref={fileInputRef}
-            onChange={handleFileChange}
-            accept=".json"
-            className="hidden"
-          />
 
           {/* Dark Mode Toggle */}
           <button
             id="dark-mode-toggle"
             onClick={onToggleDarkMode}
-            className="p-2 rounded bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 transition cursor-pointer"
+            className="p-1.5 rounded bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 transition cursor-pointer"
             title={darkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
           >
             {darkMode ? <Sun className="w-3.5 h-3.5 text-amber-400" /> : <Moon className="w-3.5 h-3.5 text-slate-600" />}
           </button>
+
+          {/* User Profile / Auth Toggle */}
+          {currentUser ? (
+            <div className="flex items-center gap-2 pl-1 border-l border-slate-200 dark:border-slate-800 font-mono">
+              <div className="flex items-center gap-1.5 text-xs text-slate-700 dark:text-slate-300 font-medium">
+                <User className="w-3.5 h-3.5 text-indigo-500" />
+                <span className="hidden sm:inline">{currentUser.name.split(' ')[0]}</span>
+              </div>
+              <button
+                id="logout-btn"
+                onClick={onLogout}
+                className="p-1.5 rounded text-slate-400 hover:text-rose-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+                title="Sign Out"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          ) : (
+            <button
+              id="open-login-btn"
+              onClick={onOpenAuthModal}
+              className="flex items-center gap-1 px-3 py-1.5 rounded text-xs font-mono font-bold bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800 hover:bg-indigo-100 transition cursor-pointer"
+            >
+              <LogIn className="w-3.5 h-3.5" />
+              <span>SIGN IN</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -213,13 +285,12 @@ export const Header: React.FC<HeaderProps> = ({
         <div className="flex items-center gap-4 text-[10px] uppercase tracking-widest text-slate-400">
           <span className="flex items-center gap-1.5">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-            <span>STORAGE: LOCAL_KV_PERSISTED</span>
+            <span>DATABASE: {currentUser ? 'MULTI_USER_POSTGRES' : 'LOCAL_KV_BACKED'}</span>
           </span>
           <span className="hidden md:inline text-slate-300 dark:text-slate-600">//</span>
-          <span className="hidden md:inline text-slate-500 font-mono">CLUSTER: vercel-iad1</span>
+          <span className="hidden md:inline text-slate-500 font-mono">FEED: YAHOO_SERVER_CACHED</span>
         </div>
       </div>
     </header>
   );
 };
-

@@ -1,0 +1,89 @@
+import { Router } from 'express';
+import { dbManager } from '../db/dbManager';
+import { authenticateToken, requireAdmin, AuthenticatedRequest } from '../middleware/auth';
+
+export const adminRouter = Router();
+adminRouter.use(authenticateToken);
+adminRouter.use(requireAdmin);
+
+// GET /api/admin/metrics - Global platform statistics
+adminRouter.get('/metrics', (req: AuthenticatedRequest, res) => {
+  const totalUsers = dbManager.users.size;
+  const activeUsers = Array.from(dbManager.users.values()).filter((u) => u.isActive).length;
+  const totalPortfolios = dbManager.portfolios.size;
+  const totalTransactions = dbManager.transactions.size;
+  const totalAlerts = dbManager.alerts.size;
+  const totalNotifications = dbManager.notifications.size;
+  const totalInstruments = dbManager.instruments.size;
+
+  res.json({
+    success: true,
+    data: {
+      totalUsers,
+      activeUsers,
+      totalPortfolios,
+      totalTransactions,
+      totalAlerts,
+      totalNotifications,
+      totalInstruments,
+      marketDataStatus: 'HEALTHY (Yahoo Realtime + Fallback)',
+      databaseStatus: dbManager.isConnected() ? 'PostgreSQL (Prisma Connected)' : 'In-Memory Resilient Store',
+      nodeEnv: process.env.NODE_ENV || 'development',
+      uptimeSeconds: process.uptime(),
+    },
+  });
+});
+
+// GET /api/admin/users - List users
+adminRouter.get('/users', (req: AuthenticatedRequest, res) => {
+  const users = Array.from(dbManager.users.values()).map((u) => ({
+    id: u.id,
+    email: u.email,
+    name: u.name,
+    role: u.role,
+    isActive: u.isActive,
+    emailVerified: u.emailVerified,
+    createdAt: u.createdAt,
+    lastLoginAt: u.lastLoginAt,
+  }));
+
+  res.json({
+    success: true,
+    data: users,
+  });
+});
+
+// POST /api/admin/users/:id/toggle-status - Toggle user active/deactivated
+adminRouter.post('/users/:id/toggle-status', (req: AuthenticatedRequest, res) => {
+  const { id } = req.params;
+  const user = dbManager.users.get(id);
+
+  if (!user) {
+    res.status(404).json({ success: false, error: { code: 'USER_NOT_FOUND', message: 'User not found' } });
+    return;
+  }
+
+  user.isActive = !user.isActive;
+  user.updatedAt = new Date();
+
+  dbManager.logAudit({
+    userId: req.user!.userId,
+    action: 'ADMIN_TOGGLE_USER',
+    resource: `User:${id}`,
+    details: `Set isActive to ${user.isActive}`,
+  });
+
+  res.json({
+    success: true,
+    data: { message: `User status changed to ${user.isActive ? 'Active' : 'Deactivated'}`, user },
+  });
+});
+
+// GET /api/admin/logs - Audit logs
+adminRouter.get('/logs', (req: AuthenticatedRequest, res) => {
+  const logs = [...dbManager.auditLogs].reverse().slice(0, 50);
+  res.json({
+    success: true,
+    data: logs,
+  });
+});

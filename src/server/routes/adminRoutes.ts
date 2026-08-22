@@ -53,6 +53,54 @@ adminRouter.get('/users', (req: AuthenticatedRequest, res) => {
   });
 });
 
+// POST /api/admin/users - Create a new user from admin console
+adminRouter.post('/users', async (req: AuthenticatedRequest, res) => {
+  try {
+    const { email, password = 'User@12345', name, role = 'USER' } = req.body;
+
+    if (!email || !name) {
+      res.status(400).json({
+        success: false,
+        error: { code: 'INVALID_INPUT', message: 'Name and email are required' },
+      });
+      return;
+    }
+
+    const { user } = await import('../services/authService').then((m) =>
+      m.authService.register(email, password, name)
+    );
+
+    if (role === 'ADMIN') {
+      user.role = 'ADMIN';
+    }
+
+    dbManager.logAudit({
+      userId: req.user!.userId,
+      action: 'ADMIN_CREATE_USER',
+      resource: `User:${user.id}`,
+      details: `Created user ${user.email} with role ${user.role}`,
+    });
+
+    res.status(201).json({
+      success: true,
+      data: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+        isActive: user.isActive,
+        emailVerified: user.emailVerified,
+        createdAt: user.createdAt,
+      },
+    });
+  } catch (err: any) {
+    res.status(400).json({
+      success: false,
+      error: { code: 'CREATION_FAILED', message: err.message || 'Failed to create user' },
+    });
+  }
+});
+
 // POST /api/admin/users/:id/toggle-status - Toggle user active/deactivated
 adminRouter.post('/users/:id/toggle-status', (req: AuthenticatedRequest, res) => {
   const { id } = req.params;

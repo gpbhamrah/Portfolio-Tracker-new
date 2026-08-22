@@ -6,8 +6,8 @@ import { validateRequest, RegisterSchema, LoginSchema } from '../middleware/vali
 
 export const authRouter = Router();
 
-// POST /api/auth/register
-authRouter.post('/register', validateRequest(RegisterSchema), async (req, res) => {
+// POST /api/auth/register (also supports /signup, /create-user, /new-user)
+const handleRegister = async (req: any, res: any) => {
   try {
     const { email, password, name } = req.body;
     const { user, token } = await authService.register(email, password, name);
@@ -38,7 +38,12 @@ authRouter.post('/register', validateRequest(RegisterSchema), async (req, res) =
       error: { code: 'REGISTRATION_FAILED', message: err.message || 'Registration failed' },
     });
   }
-});
+};
+
+authRouter.post('/register', validateRequest(RegisterSchema), handleRegister);
+authRouter.post('/signup', validateRequest(RegisterSchema), handleRegister);
+authRouter.post('/create-user', validateRequest(RegisterSchema), handleRegister);
+authRouter.post('/new-user', validateRequest(RegisterSchema), handleRegister);
 
 // POST /api/auth/login
 authRouter.post('/login', validateRequest(LoginSchema), async (req, res) => {

@@ -33,6 +33,7 @@ app.use('/api/watchlists', watchlistRouter);
 app.use('/api/alerts', alertRouter);
 app.use('/api/market', marketRouter);
 app.use('/api/user', userRouter);
+app.use('/api/users', userRouter);
 app.use('/api/admin', adminRouter);
 
 // 2. Compatibility Endpoints for existing frontend services
@@ -66,6 +67,17 @@ app.get('/api/indices-data', async (req, res) => {
   } catch (error: any) {
     return res.status(500).json({ error: error.message, nifty: null, sectors: [] });
   }
+});
+
+// 3. API 404 Guard: Ensure unmapped /api/* endpoints return JSON instead of HTML
+app.all('/api/*', (req, res) => {
+  res.status(404).json({
+    success: false,
+    error: {
+      code: 'API_ENDPOINT_NOT_FOUND',
+      message: `API endpoint ${req.method} ${req.originalUrl} not found`,
+    },
+  });
 });
 
 async function startServer() {

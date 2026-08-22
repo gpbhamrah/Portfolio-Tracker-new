@@ -193,6 +193,13 @@ class ApiClient {
     return this.request<any[]>('/api/admin/users');
   }
 
+  public async createAdminUser(data: { name: string; email: string; password?: string; role?: string }) {
+    return this.request<any>('/api/admin/users', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
   public async toggleUserStatus(userId: string) {
     return this.request<any>(`/api/admin/users/${userId}/toggle-status`, {
       method: 'POST',

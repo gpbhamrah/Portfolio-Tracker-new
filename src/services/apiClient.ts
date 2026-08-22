@@ -50,17 +50,40 @@ class ApiClient {
     try {
       const res = await fetch(endpoint, {
         ...options,
+        credentials: 'include',
         headers,
       });
 
-      const json = await res.json();
+      let json: any;
+      try {
+        json = await res.json();
+      } catch (parseErr) {
+        return {
+          success: false,
+          error: {
+            code: `HTTP_${res.status}`,
+            message: `Server returned status ${res.status}: ${res.statusText || 'Unknown error'}`,
+          },
+        };
+      }
+
+      if (!res.ok && !json.error) {
+        return {
+          success: false,
+          error: {
+            code: `HTTP_${res.status}`,
+            message: json.message || `Request failed with status ${res.status}`,
+          },
+        };
+      }
+
       return json;
     } catch (err: any) {
       return {
         success: false,
         error: {
           code: 'NETWORK_ERROR',
-          message: err.message || 'Network request failed',
+          message: err.message || 'Unable to connect to the server. Please check your connection.',
         },
       };
     }

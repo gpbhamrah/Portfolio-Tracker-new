@@ -78,6 +78,17 @@ watchlistRouter.get('/', async (req: AuthenticatedRequest, res) => {
 watchlistRouter.post('/:id/items', async (req: AuthenticatedRequest, res) => {
   try {
     const watchlistId = req.params.id;
+    const userId = req.user!.userId;
+    const watchlist = dbManager.watchlists.get(watchlistId);
+
+    if (!watchlist || (watchlist.userId !== userId && req.user?.role !== 'ADMIN')) {
+      res.status(403).json({
+        success: false,
+        error: { code: 'ACCESS_DENIED', message: 'You do not have permission to modify this watchlist.' },
+      });
+      return;
+    }
+
     const { name, ticker, sector, targetEntryPrice, targetSellPrice, stopLoss, notes, addedDate } = req.body;
 
     if (!ticker) {
@@ -152,7 +163,27 @@ watchlistRouter.post('/:id/items', async (req: AuthenticatedRequest, res) => {
 
 // DELETE /api/watchlists/:watchlistId/items/:itemId - Remove item from watchlist
 watchlistRouter.delete('/:watchlistId/items/:itemId', (req: AuthenticatedRequest, res) => {
-  const { itemId } = req.params;
+  const { watchlistId, itemId } = req.params;
+  const userId = req.user!.userId;
+  const watchlist = dbManager.watchlists.get(watchlistId);
+
+  if (!watchlist || (watchlist.userId !== userId && req.user?.role !== 'ADMIN')) {
+    res.status(403).json({
+      success: false,
+      error: { code: 'ACCESS_DENIED', message: 'You do not have permission to modify this watchlist.' },
+    });
+    return;
+  }
+
+  const item = dbManager.watchlistItems.get(itemId);
+  if (!item || item.watchlistId !== watchlistId) {
+    res.status(404).json({
+      success: false,
+      error: { code: 'ITEM_NOT_FOUND', message: 'Watchlist item not found.' },
+    });
+    return;
+  }
+
   dbManager.watchlistItems.delete(itemId);
   res.json({
     success: true,

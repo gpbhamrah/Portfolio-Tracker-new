@@ -10,7 +10,10 @@ export const authRouter = Router();
 const handleRegister = async (req: any, res: any) => {
   try {
     const { email, password, name } = req.body;
+    console.log(`[AUTH] Registration attempt for email: ${email}`);
+
     const { user, token } = await authService.register(email, password, name);
+    console.log(`[AUTH] ✅ User registered successfully: id=${user.id}, email=${user.email}`);
 
     res.cookie('token', token, {
       httpOnly: true,
@@ -33,6 +36,7 @@ const handleRegister = async (req: any, res: any) => {
       },
     });
   } catch (err: any) {
+    console.error(`[AUTH] ❌ Registration failed for ${req.body?.email}:`, err.message);
     res.status(400).json({
       success: false,
       error: { code: 'REGISTRATION_FAILED', message: err.message || 'Registration failed' },
@@ -49,7 +53,10 @@ authRouter.post('/new-user', validateRequest(RegisterSchema), handleRegister);
 authRouter.post('/login', validateRequest(LoginSchema), async (req, res) => {
   try {
     const { email, password } = req.body;
+    console.log(`[AUTH] Login attempt for email: ${email}`);
+
     const { user, token } = await authService.login(email, password);
+    console.log(`[AUTH] ✅ Login successful for user: id=${user.id}, email=${user.email}`);
 
     res.cookie('token', token, {
       httpOnly: true,
@@ -72,15 +79,17 @@ authRouter.post('/login', validateRequest(LoginSchema), async (req, res) => {
       },
     });
   } catch (err: any) {
+    console.warn(`[AUTH] ❌ Login failed for ${req.body?.email}:`, err.message);
     res.status(401).json({
       success: false,
-      error: { code: 'AUTHENTICATION_FAILED', message: err.message || 'Login failed' },
+      error: { code: 'AUTHENTICATION_FAILED', message: err.message || 'Invalid email or password' },
     });
   }
 });
 
 // POST /api/auth/logout
 authRouter.post('/logout', (req, res) => {
+  console.log(`[AUTH] User logout requested`);
   res.clearCookie('token');
   res.json({
     success: true,
@@ -92,6 +101,7 @@ authRouter.post('/logout', (req, res) => {
 authRouter.get('/me', authenticateToken, (req: AuthenticatedRequest, res) => {
   const user = dbManager.users.get(req.user!.userId);
   if (!user) {
+    console.warn(`[AUTH] /me - User not found for token userId: ${req.user!.userId}`);
     res.status(404).json({
       success: false,
       error: { code: 'USER_NOT_FOUND', message: 'User record not found' },
@@ -124,9 +134,10 @@ authRouter.get('/me', authenticateToken, (req: AuthenticatedRequest, res) => {
 // POST /api/auth/forgot-password
 authRouter.post('/forgot-password', (req, res) => {
   const { email } = req.body;
-  // Mock sending secure reset token link
+  console.log(`[AUTH] Forgot password request for email: ${email}`);
   res.json({
     success: true,
     data: { message: `Password reset instructions sent to ${email || 'your registered address'}` },
   });
 });
+

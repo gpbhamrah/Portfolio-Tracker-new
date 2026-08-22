@@ -38,7 +38,7 @@ export const LoginSchema = z.object({
 });
 
 export const TransactionSchema = z.object({
-  portfolioId: z.string().min(1, 'Portfolio ID is required'),
+  portfolioId: z.string().optional(),
   symbol: z.string().min(1, 'Stock ticker/symbol is required'),
   name: z.string().optional(),
   sector: z.string().optional(),

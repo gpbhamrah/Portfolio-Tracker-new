@@ -106,11 +106,41 @@ export default function App() {
       const res = await apiClient.getMe();
       if (res.success && res.data?.user) {
         setCurrentUser(res.data.user);
-        loadUserPortfolios(res.data.user.id);
+        await loadUserPortfolios(res.data.user.id);
+        await loadUserWatchlist();
+      } else {
+        if (apiClient.getToken()) {
+          apiClient.setToken(null);
+        }
       }
     };
     checkAuth();
   }, []);
+
+  const loadUserWatchlist = async () => {
+    try {
+      const res = await apiClient.getWatchlist();
+      if (res.success && res.data?.items) {
+        const dbWatchlist: WatchlistItem[] = res.data.items.map((w: any) => ({
+          id: w.id,
+          name: w.name,
+          ticker: w.ticker,
+          sector: w.sector,
+          targetEntryPrice: w.targetEntryPrice,
+          cmp: w.cmp,
+          dayChange: w.dayChange,
+          dayChangePercent: w.dayChangePercent,
+          targetSellPrice: w.targetSellPrice,
+          stopLoss: w.stopLoss,
+          addedDate: w.addedDate,
+          notes: w.notes,
+        }));
+        setWatchlist(dbWatchlist);
+      }
+    } catch (err) {
+      console.error('Failed to load user watchlist', err);
+    }
+  };
 
   const loadUserPortfolios = async (userId: string) => {
     try {
@@ -119,7 +149,10 @@ export default function App() {
         setPortfolios(res.data);
         const defaultPort = res.data.find((p: any) => p.isDefault) || res.data[0];
         setActivePortfolioId(defaultPort.id);
-        loadDatabasePortfolio(defaultPort.id);
+        await loadDatabasePortfolio(defaultPort.id);
+      } else {
+        setPortfolios([]);
+        setHoldings([]);
       }
     } catch (err) {
       console.error('Failed to load user portfolios', err);
@@ -129,8 +162,8 @@ export default function App() {
   const loadDatabasePortfolio = async (portfolioId: string) => {
     try {
       const res = await apiClient.getPortfolioSummary(portfolioId);
-      if (res.success && res.data?.holdings) {
-        const dbHoldings: Holding[] = res.data.holdings.map((h: any) => ({
+      if (res.success && res.data) {
+        const dbHoldings: Holding[] = (res.data.holdings || []).map((h: any) => ({
           id: h.id,
           name: h.name,
           ticker: h.ticker,
@@ -146,9 +179,7 @@ export default function App() {
           dayChangePercent: h.dayChangePercent,
           updatedAt: new Date().toISOString(),
         }));
-        if (dbHoldings.length > 0) {
-          setHoldings(dbHoldings);
-        }
+        setHoldings(dbHoldings);
       }
     } catch (err) {
       console.error('Failed to load portfolio details from database', err);
@@ -179,7 +210,9 @@ export default function App() {
     await apiClient.logout();
     setCurrentUser(null);
     setPortfolios([]);
-    showToast('Signed out');
+    setHoldings(DEFAULT_HOLDINGS);
+    setWatchlist(DEFAULT_WATCHLIST);
+    showToast('Signed out successfully');
   };
 
   /**
@@ -679,9 +712,10 @@ export default function App() {
       <AuthModal
         isOpen={isAuthModalOpen}
         onClose={() => setIsAuthModalOpen(false)}
-        onSuccess={(user) => {
+        onSuccess={async (user) => {
           setCurrentUser(user);
-          loadUserPortfolios(user.id);
+          await loadUserPortfolios(user.id);
+          await loadUserWatchlist();
           showToast(`Welcome, ${user.name}!`);
         }}
       />

@@ -19,6 +19,7 @@ const handleRegister = async (req: any, res: any) => {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
+      path: '/',
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
@@ -62,6 +63,7 @@ authRouter.post('/login', validateRequest(LoginSchema), async (req, res) => {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
+      path: '/',
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
@@ -90,7 +92,7 @@ authRouter.post('/login', validateRequest(LoginSchema), async (req, res) => {
 // POST /api/auth/logout
 authRouter.post('/logout', (req, res) => {
   console.log(`[AUTH] User logout requested`);
-  res.clearCookie('token');
+  res.clearCookie('token', { path: '/' });
   res.json({
     success: true,
     data: { message: 'Logged out successfully' },
@@ -98,37 +100,45 @@ authRouter.post('/logout', (req, res) => {
 });
 
 // GET /api/auth/me
-authRouter.get('/me', authenticateToken, (req: AuthenticatedRequest, res) => {
-  const user = dbManager.users.get(req.user!.userId);
-  if (!user) {
-    console.warn(`[AUTH] /me - User not found for token userId: ${req.user!.userId}`);
-    res.status(404).json({
-      success: false,
-      error: { code: 'USER_NOT_FOUND', message: 'User record not found' },
+authRouter.get('/me', authenticateToken, async (req: AuthenticatedRequest, res) => {
+  try {
+    const user = await dbManager.findUserById(req.user!.userId);
+    if (!user) {
+      console.warn(`[AUTH] /me - User not found for token userId: ${req.user!.userId}`);
+      res.status(404).json({
+        success: false,
+        error: { code: 'USER_NOT_FOUND', message: 'User record not found' },
+      });
+      return;
+    }
+
+    const settings = await dbManager.getUserSettings(user.id);
+
+    res.json({
+      success: true,
+      data: {
+        user: {
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          role: user.role,
+          emailVerified: user.emailVerified,
+          createdAt: user.createdAt,
+        },
+        settings: settings || {
+          currency: 'INR',
+          timezone: 'Asia/Kolkata',
+          theme: 'system',
+        },
+      },
     });
-    return;
+  } catch (err: any) {
+    console.error('Error fetching /api/auth/me:', err);
+    res.status(500).json({
+      success: false,
+      error: { code: 'SERVER_ERROR', message: 'Failed to fetch user session' },
+    });
   }
-
-  const settings = dbManager.userSettings.get(user.id);
-
-  res.json({
-    success: true,
-    data: {
-      user: {
-        id: user.id,
-        email: user.email,
-        name: user.name,
-        role: user.role,
-        emailVerified: user.emailVerified,
-        createdAt: user.createdAt,
-      },
-      settings: settings || {
-        currency: 'INR',
-        timezone: 'Asia/Kolkata',
-        theme: 'system',
-      },
-    },
-  });
 });
 
 // POST /api/auth/forgot-password
@@ -140,4 +150,3 @@ authRouter.post('/forgot-password', (req, res) => {
     data: { message: `Password reset instructions sent to ${email || 'your registered address'}` },
   });
 });
-

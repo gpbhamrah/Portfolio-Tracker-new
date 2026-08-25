@@ -6,71 +6,69 @@ export const userRouter = Router();
 userRouter.use(authenticateToken);
 
 // GET /api/user/profile
-userRouter.get('/profile', (req: AuthenticatedRequest, res) => {
-  const user = dbManager.users.get(req.user!.userId);
-  if (!user) {
-    res.status(404).json({ success: false, error: { code: 'USER_NOT_FOUND', message: 'User not found' } });
-    return;
-  }
+userRouter.get('/profile', async (req: AuthenticatedRequest, res) => {
+  try {
+    const user = await dbManager.findUserById(req.user!.userId);
+    if (!user) {
+      res.status(404).json({ success: false, error: { code: 'USER_NOT_FOUND', message: 'User not found' } });
+      return;
+    }
 
-  res.json({
-    success: true,
-    data: {
-      id: user.id,
-      email: user.email,
-      name: user.name,
-      role: user.role,
-      emailVerified: user.emailVerified,
-      createdAt: user.createdAt,
-      lastLoginAt: user.lastLoginAt,
-    },
-  });
+    res.json({
+      success: true,
+      data: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+        emailVerified: user.emailVerified,
+        createdAt: user.createdAt,
+        lastLoginAt: user.lastLoginAt,
+      },
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: { code: 'PROFILE_FETCH_FAILED', message: err.message } });
+  }
 });
 
 // GET /api/user/settings
-userRouter.get('/settings', (req: AuthenticatedRequest, res) => {
-  const settings = dbManager.userSettings.get(req.user!.userId) || {
-    currency: 'INR',
-    timezone: 'Asia/Kolkata',
-    theme: 'system',
-    emailNotifications: true,
-  };
+userRouter.get('/settings', async (req: AuthenticatedRequest, res) => {
+  try {
+    const settings = (await dbManager.getUserSettings(req.user!.userId)) || {
+      id: `settings-${req.user!.userId}`,
+      userId: req.user!.userId,
+      currency: 'INR',
+      timezone: 'Asia/Kolkata',
+      theme: 'system',
+      emailNotifications: true,
+      telegramNotifications: false,
+      whatsappNotifications: false,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
 
-  res.json({
-    success: true,
-    data: settings,
-  });
+    res.json({
+      success: true,
+      data: settings,
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: { code: 'SETTINGS_FETCH_FAILED', message: err.message } });
+  }
 });
 
 // PUT /api/user/settings
-userRouter.put('/settings', (req: AuthenticatedRequest, res) => {
-  const userId = req.user!.userId;
-  const current = dbManager.userSettings.get(userId) || {
-    id: `settings-${userId}`,
-    userId,
-    currency: 'INR',
-    timezone: 'Asia/Kolkata',
-    theme: 'system',
-    emailNotifications: true,
-    telegramNotifications: false,
-    whatsappNotifications: false,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  };
+userRouter.put('/settings', async (req: AuthenticatedRequest, res) => {
+  try {
+    const userId = req.user!.userId;
+    const updated = await dbManager.updateUserSettings(userId, req.body);
 
-  const updated = {
-    ...current,
-    ...req.body,
-    userId,
-    updatedAt: new Date(),
-  };
-
-  dbManager.userSettings.set(userId, updated);
-
-  res.json({
-    success: true,
-    data: updated,
-  });
+    res.json({
+      success: true,
+      data: updated,
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: { code: 'SETTINGS_UPDATE_FAILED', message: err.message } });
+  }
 });
 
 // POST /api/user/change-password

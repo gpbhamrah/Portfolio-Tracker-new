@@ -9,43 +9,53 @@ export interface AuthenticatedRequest extends Request {
 /**
  * Validates JWT token from Authorization Header or HTTP cookie
  */
-export function authenticateToken(
+export async function authenticateToken(
   req: AuthenticatedRequest,
   res: Response,
   next: NextFunction
-): void {
-  const authHeader = req.headers['authorization'];
-  const token = (authHeader && authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null) || req.cookies?.token;
+): Promise<void> {
+  try {
+    const authHeader = req.headers['authorization'];
+    const token =
+      (authHeader && authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null) ||
+      req.cookies?.token;
 
-  if (!token) {
-    res.status(401).json({
+    if (!token) {
+      res.status(401).json({
+        success: false,
+        error: { code: 'UNAUTHORIZED', message: 'Authentication required. Please log in.' },
+      });
+      return;
+    }
+
+    const payload = authService.verifyToken(token);
+    if (!payload) {
+      res.status(401).json({
+        success: false,
+        error: { code: 'INVALID_TOKEN', message: 'Session expired or invalid token. Please log in again.' },
+      });
+      return;
+    }
+
+    // Check if user exists & is active in DB
+    const user = await dbManager.findUserById(payload.userId);
+    if (!user || !user.isActive) {
+      res.status(403).json({
+        success: false,
+        error: { code: 'ACCOUNT_DISABLED', message: 'User account has been suspended or removed.' },
+      });
+      return;
+    }
+
+    req.user = payload;
+    next();
+  } catch (err: any) {
+    console.error('Authentication middleware error:', err);
+    res.status(500).json({
       success: false,
-      error: { code: 'UNAUTHORIZED', message: 'Authentication required. Please log in.' },
+      error: { code: 'AUTH_ERROR', message: 'Internal authentication error' },
     });
-    return;
   }
-
-  const payload = authService.verifyToken(token);
-  if (!payload) {
-    res.status(401).json({
-      success: false,
-      error: { code: 'INVALID_TOKEN', message: 'Session expired or invalid token. Please log in again.' },
-    });
-    return;
-  }
-
-  // Check if user is active in DB
-  const user = dbManager.users.get(payload.userId);
-  if (!user || !user.isActive) {
-    res.status(403).json({
-      success: false,
-      error: { code: 'ACCOUNT_DISABLED', message: 'User account has been suspended or removed.' },
-    });
-    return;
-  }
-
-  req.user = payload;
-  next();
 }
 
 /**
@@ -69,38 +79,46 @@ export function requireAdmin(
 /**
  * IDOR Protection: Verifies user owns the specified portfolio
  */
-export function verifyPortfolioOwnership(
+export async function verifyPortfolioOwnership(
   req: AuthenticatedRequest,
   res: Response,
   next: NextFunction
-): void {
-  const portfolioId = req.params.portfolioId || req.params.id;
-  const userId = req.user?.userId;
+): Promise<void> {
+  try {
+    const portfolioId = req.params.portfolioId || req.params.id;
+    const userId = req.user?.userId;
 
-  if (!portfolioId || !userId) {
-    res.status(400).json({
+    if (!portfolioId || !userId) {
+      res.status(400).json({
+        success: false,
+        error: { code: 'BAD_REQUEST', message: 'Portfolio identifier missing.' },
+      });
+      return;
+    }
+
+    const portfolio = await dbManager.getPortfolioById(portfolioId);
+    if (!portfolio) {
+      res.status(404).json({
+        success: false,
+        error: { code: 'PORTFOLIO_NOT_FOUND', message: 'Portfolio not found.' },
+      });
+      return;
+    }
+
+    if (portfolio.userId !== userId && req.user?.role !== 'ADMIN') {
+      res.status(403).json({
+        success: false,
+        error: { code: 'ACCESS_DENIED', message: 'You do not have permission to access this portfolio.' },
+      });
+      return;
+    }
+
+    next();
+  } catch (err: any) {
+    console.error('Portfolio ownership verification error:', err);
+    res.status(500).json({
       success: false,
-      error: { code: 'BAD_REQUEST', message: 'Portfolio identifier missing.' },
+      error: { code: 'VERIFICATION_ERROR', message: 'Failed to verify portfolio ownership' },
     });
-    return;
   }
-
-  const portfolio = dbManager.portfolios.get(portfolioId);
-  if (!portfolio) {
-    res.status(404).json({
-      success: false,
-      error: { code: 'PORTFOLIO_NOT_FOUND', message: 'Portfolio not found.' },
-    });
-    return;
-  }
-
-  if (portfolio.userId !== userId && req.user?.role !== 'ADMIN') {
-    res.status(403).json({
-      success: false,
-      error: { code: 'ACCESS_DENIED', message: 'You do not have permission to access this portfolio.' },
-    });
-    return;
-  }
-
-  next();
 }

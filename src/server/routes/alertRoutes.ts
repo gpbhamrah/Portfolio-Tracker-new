@@ -1,8 +1,7 @@
 import { Router } from 'express';
-import { dbManager, DbAlert, DbNotification } from '../db/dbManager';
+import { dbManager, DbAlert } from '../db/dbManager';
 import { authenticateToken, AuthenticatedRequest } from '../middleware/auth';
 import { validateRequest, AlertSchema } from '../middleware/validation';
-import { marketDataService } from '../services/marketDataService';
 
 export const alertRouter = Router();
 alertRouter.use(authenticateToken);
@@ -37,25 +36,7 @@ alertRouter.post('/', validateRequest(AlertSchema), async (req: AuthenticatedReq
       ? symbol.trim().toUpperCase()
       : `${symbol.trim().toUpperCase()}.NS`;
 
-    let inst = dbManager.instruments.get(cleanSym) || dbManager.instruments.get(cleanSym.replace('.NS', ''));
-    if (!inst) {
-      const instId = `inst-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
-      inst = {
-        id: instId,
-        symbol: cleanSym,
-        exchange: 'NSE',
-        name: cleanSym.replace('.NS', ''),
-        sector: 'General',
-        instrumentType: 'STOCK',
-        currency: 'INR',
-        isActive: true,
-        dataStatus: 'fresh',
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
-      dbManager.instruments.set(instId, inst);
-      dbManager.instruments.set(cleanSym, inst);
-    }
+    const inst = await dbManager.getOrUpsertInstrument(cleanSym, cleanSym.replace('.NS', ''), 'General');
 
     const alertId = `alt-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
     const newAlert: DbAlert = {

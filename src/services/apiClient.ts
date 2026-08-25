@@ -16,6 +16,8 @@ export interface ApiResponse<T = any> {
   };
 }
 
+const API_BASE_URL = (import.meta.env.VITE_API_URL || '').replace(/\/+$/, '');
+
 class ApiClient {
   private token: string | null = null;
 
@@ -37,6 +39,10 @@ class ApiClient {
   }
 
   private async request<T = any>(endpoint: string, options: RequestInit = {}): Promise<ApiResponse<T>> {
+    const url = endpoint.startsWith('http://') || endpoint.startsWith('https://')
+      ? endpoint
+      : `${API_BASE_URL}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
+
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       Accept: 'application/json',
@@ -48,7 +54,7 @@ class ApiClient {
     }
 
     try {
-      const res = await fetch(endpoint, {
+      const res = await fetch(url, {
         ...options,
         credentials: 'include',
         headers,

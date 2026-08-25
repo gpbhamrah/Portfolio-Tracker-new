@@ -76,15 +76,13 @@ export class PortfolioEngine {
    * Rebuilds holdings and calculates complete portfolio metrics for a given user & portfolio
    */
   public async getPortfolioSummary(userId: string, portfolioId: string): Promise<PortfolioSummary | null> {
-    const portfolio = dbManager.portfolios.get(portfolioId);
+    const portfolio = await dbManager.getPortfolioById(portfolioId);
     if (!portfolio || portfolio.userId !== userId) {
       return null;
     }
 
     // 1. Fetch all transactions for this portfolio
-    const transactions = Array.from(dbManager.transactions.values()).filter(
-      (tx) => tx.portfolioId === portfolioId && tx.userId === userId
-    );
+    const transactions = await dbManager.getTransactions(portfolioId, userId);
 
     // Group transactions by instrumentId
     const txByInstrument = new Map<string, DbTransaction[]>();
@@ -380,25 +378,7 @@ export class PortfolioEngine {
         const cleanSym = symbol.toUpperCase().endsWith('.NS') ? symbol.toUpperCase() : `${symbol.toUpperCase()}.NS`;
 
         // Find or create instrument
-        let inst = dbManager.instruments.get(cleanSym) || dbManager.instruments.get(cleanSym.replace('.NS', ''));
-        if (!inst) {
-          const instId = `inst-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
-          inst = {
-            id: instId,
-            symbol: cleanSym,
-            exchange: 'NSE',
-            name: symbol.toUpperCase().replace('.NS', ''),
-            sector: 'General',
-            instrumentType: 'STOCK',
-            currency: 'INR',
-            isActive: true,
-            dataStatus: 'fresh',
-            createdAt: new Date(),
-            updatedAt: new Date(),
-          };
-          dbManager.instruments.set(instId, inst);
-          dbManager.instruments.set(cleanSym, inst);
-        }
+        const inst = await dbManager.getOrUpsertInstrument(cleanSym, symbol.toUpperCase().replace('.NS', ''), 'General');
 
         // Add Transaction
         const txId = `tx-${Date.now()}-${Math.random().toString(36).substr(2, 7)}`;
@@ -419,7 +399,7 @@ export class PortfolioEngine {
           updatedAt: new Date(),
         };
 
-        dbManager.transactions.set(txId, tx);
+        await dbManager.createTransaction(tx);
         importedCount++;
       } catch (err: any) {
         errors.push(`Row ${i + 1}: Parse failure: ${err?.message || 'Unknown error'}`);

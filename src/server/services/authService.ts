@@ -46,9 +46,8 @@ export class AuthService {
     const normalizedEmail = email.trim().toLowerCase();
     const resolvedName = name?.trim() || normalizedEmail.split('@')[0];
 
-    const existing = Array.from(dbManager.users.values()).find(
-      (u) => u.email.toLowerCase() === normalizedEmail
-    );
+    // Check if user already exists
+    const existing = await dbManager.findUserByEmail(normalizedEmail);
     if (existing) {
       throw new Error('An account with this email address already exists. Please sign in instead.');
     }
@@ -68,64 +67,30 @@ export class AuthService {
       updatedAt: new Date(),
     };
 
-    dbManager.users.set(userId, newUser);
-
-    // Create user settings
-    dbManager.userSettings.set(userId, {
-      id: `settings-${userId}`,
-      userId,
+    const createdUser = await dbManager.createUser(newUser, {
       currency: 'INR',
       timezone: 'Asia/Kolkata',
       theme: 'system',
       emailNotifications: true,
-      telegramNotifications: false,
-      whatsappNotifications: false,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    });
-
-    // Create default portfolio
-    const defaultPortfolioId = `port-${userId}-default`;
-    dbManager.portfolios.set(defaultPortfolioId, {
-      id: defaultPortfolioId,
-      userId,
-      name: 'Main Equity Portfolio',
-      description: 'Primary long-term Indian equities',
-      baseCurrency: 'INR',
-      isDefault: true,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    });
-
-    // Create default watchlist
-    const defaultWlId = `wl-${userId}-default`;
-    dbManager.watchlists.set(defaultWlId, {
-      id: defaultWlId,
-      userId,
-      name: 'Primary Watchlist',
-      description: 'Breakout watches & entry targets',
-      createdAt: new Date(),
-      updatedAt: new Date(),
     });
 
     dbManager.logAudit({
-      userId,
+      userId: createdUser.id,
       action: 'USER_REGISTER',
       resource: 'User',
-      details: `New user registration for ${email}`,
+      details: `New user registration for ${normalizedEmail}`,
     });
 
-    const token = this.generateToken(newUser);
-    return { user: newUser, token };
+    const token = this.generateToken(createdUser);
+    return { user: createdUser, token };
   }
 
   public async login(
     email: string,
     password: string
   ): Promise<{ user: DbUser; token: string }> {
-    const user = Array.from(dbManager.users.values()).find(
-      (u) => u.email.toLowerCase() === email.toLowerCase()
-    );
+    const normalizedEmail = email.trim().toLowerCase();
+    const user = await dbManager.findUserByEmail(normalizedEmail);
 
     if (!user) {
       throw new Error('Invalid email or password credentials.');
@@ -140,14 +105,16 @@ export class AuthService {
       throw new Error('Invalid email or password credentials.');
     }
 
-    user.lastLoginAt = new Date();
-    user.updatedAt = new Date();
+    // Update lastLoginAt
+    await dbManager.updateUser(user.id, {
+      lastLoginAt: new Date(),
+    });
 
     dbManager.logAudit({
       userId: user.id,
       action: 'USER_LOGIN',
       resource: 'User',
-      details: `User logged in from web client`,
+      details: `User logged in: ${normalizedEmail}`,
     });
 
     const token = this.generateToken(user);
@@ -159,7 +126,7 @@ export class AuthService {
     currentPass: string,
     newPass: string
   ): Promise<boolean> {
-    const user = dbManager.users.get(userId);
+    const user = await dbManager.findUserById(userId);
     if (!user) {
       throw new Error('User not found.');
     }
@@ -169,8 +136,8 @@ export class AuthService {
       throw new Error('Current password is incorrect.');
     }
 
-    user.passwordHash = await this.hashPassword(newPass);
-    user.updatedAt = new Date();
+    const newHash = await this.hashPassword(newPass);
+    await dbManager.updateUser(userId, { passwordHash: newHash });
 
     dbManager.logAudit({
       userId,
@@ -183,38 +150,12 @@ export class AuthService {
   }
 
   public async deleteAccount(userId: string): Promise<boolean> {
-    const user = dbManager.users.get(userId);
+    const user = await dbManager.findUserById(userId);
     if (!user) {
       throw new Error('User not found.');
     }
 
-    // Cascade delete portfolios, transactions, watchlists, alerts
-    for (const [id, port] of dbManager.portfolios.entries()) {
-      if (port.userId === userId) {
-        dbManager.portfolios.delete(id);
-      }
-    }
-
-    for (const [id, tx] of dbManager.transactions.entries()) {
-      if (tx.userId === userId) {
-        dbManager.transactions.delete(id);
-      }
-    }
-
-    for (const [id, wl] of dbManager.watchlists.entries()) {
-      if (wl.userId === userId) {
-        dbManager.watchlists.delete(id);
-      }
-    }
-
-    for (const [id, al] of dbManager.alerts.entries()) {
-      if (al.userId === userId) {
-        dbManager.alerts.delete(id);
-      }
-    }
-
-    dbManager.userSettings.delete(userId);
-    dbManager.users.delete(userId);
+    await dbManager.deleteUser(userId);
 
     dbManager.logAudit({
       userId,

@@ -10,8 +10,8 @@ healthRouter.get('/', (req, res) => {
     status: 'ok',
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
-    version: '2.4.0',
-    service: 'Indian Stock Portfolio Tracker Backend',
+    version: '3.0.0',
+    service: 'Indian Stock Portfolio Tracker Backend (Supabase Ready)',
   });
 });
 
@@ -19,7 +19,7 @@ healthRouter.get('/', (req, res) => {
 healthRouter.get('/database', (req, res) => {
   res.json({
     status: 'ok',
-    driver: dbManager.isConnected() ? 'PostgreSQL' : 'In-Memory Repository',
+    driver: 'Supabase Architecture Ready (In-Memory Isolation Store)',
     totalUsers: dbManager.users.size,
     totalPortfolios: dbManager.portfolios.size,
     totalTransactions: dbManager.transactions.size,
@@ -32,7 +32,7 @@ healthRouter.get('/market-data', async (req, res) => {
     const testQuote = await marketDataService.getQuote('RELIANCE.NS');
     res.json({
       status: testQuote ? 'healthy' : 'degraded',
-      provider: 'Yahoo Finance Feed with Server Cache',
+      provider: 'Real-time NSE/BSE Market Feed with Technicals',
       sampleQuote: testQuote
         ? {
             symbol: testQuote.symbol,

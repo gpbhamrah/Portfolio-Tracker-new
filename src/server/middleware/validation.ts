@@ -26,17 +26,6 @@ export const validateRequest = (schema: ZodSchema) => {
   };
 };
 
-export const RegisterSchema = z.object({
-  name: z.string().trim().min(1, 'Name is required').optional().default('Investor'),
-  email: z.string().trim().toLowerCase().email('Invalid email address format'),
-  password: z.string().min(6, 'Password must be at least 6 characters'),
-});
-
-export const LoginSchema = z.object({
-  email: z.string().trim().toLowerCase().email('Invalid email address format'),
-  password: z.string().min(1, 'Password is required'),
-});
-
 export const TransactionSchema = z.object({
   portfolioId: z.string().optional(),
   symbol: z.string().min(1, 'Stock ticker/symbol is required'),
@@ -61,13 +50,4 @@ export const AlertSchema = z.object({
   cooldownMinutes: z.number().int().min(1).default(60),
   notificationChannels: z.string().default('in_app'),
   notes: z.string().optional(),
-});
-
-export const ChangePasswordSchema = z.object({
-  currentPassword: z.string().min(1, 'Current password is required'),
-  newPassword: z.string().min(6, 'New password must be at least 6 characters'),
-});
-
-export const ForgotPasswordSchema = z.object({
-  email: z.string().email('Invalid email address format'),
 });

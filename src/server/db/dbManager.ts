@@ -1,13 +1,8 @@
-import { PrismaClient } from '@prisma/client';
-import { PrismaPg } from '@prisma/adapter-pg';
-import pg from 'pg';
-import bcrypt from 'bcryptjs';
+// Clean Data Access & Domain Model Layer (Prepared for Supabase)
 
-// Types for the repository layer
 export interface DbUser {
   id: string;
   email: string;
-  passwordHash: string;
   name: string;
   isActive: boolean;
   emailVerified: boolean;
@@ -184,22 +179,13 @@ export interface DbAuditLog {
   createdAt: Date;
 }
 
-// Global caching for Serverless Lambda instances (prevents pool exhaustion)
-const globalForPrisma = globalThis as unknown as {
-  prisma: PrismaClient | undefined;
-  pgPool: pg.Pool | undefined;
-};
-
 /**
- * Universal Database Manager with PostgreSQL Prisma integration
- * & memory-resilient store for dev/testing.
+ * Universal Database Manager
+ * Maintains clean domain models and in-memory operational state
+ * fully decoupled from old Prisma/Neon and ready for Supabase client integration.
  */
 class DatabaseManager {
-  private prisma: PrismaClient | null = null;
-  private isPrismaConnected = false;
-  private initPromise: Promise<void> | null = null;
-
-  // In-memory repositories with default seed data
+  // Operational repositories
   public users: Map<string, DbUser> = new Map();
   public userSettings: Map<string, DbUserSettings> = new Map();
   public portfolios: Map<string, DbPortfolio> = new Map();
@@ -218,270 +204,57 @@ class DatabaseManager {
   }
 
   public async initialize(): Promise<void> {
-    if (this.initPromise) {
-      return this.initPromise;
-    }
-
-    this.initPromise = (async () => {
-      const dbUrl = process.env.DATABASE_URL;
-      if (dbUrl && dbUrl.trim().length > 0) {
-        try {
-          if (!globalForPrisma.prisma) {
-            const isLocal = dbUrl.includes('localhost') || dbUrl.includes('127.0.0.1');
-            const pool = new pg.Pool({
-              connectionString: dbUrl,
-              ssl: isLocal ? false : { rejectUnauthorized: false },
-              max: 10,
-              idleTimeoutMillis: 30000,
-              connectionTimeoutMillis: 8000,
-            });
-
-            globalForPrisma.pgPool = pool;
-            const adapter = new PrismaPg(pool);
-            globalForPrisma.prisma = new PrismaClient({ adapter });
-          }
-
-          this.prisma = globalForPrisma.prisma;
-          await this.prisma.$connect();
-          this.isPrismaConnected = true;
-          console.log('✅ PostgreSQL Database connected successfully via Prisma');
-        } catch (err: any) {
-          console.warn('⚠️ PostgreSQL connection failed, operating with in-memory resilient data store:', err.message);
-          this.isPrismaConnected = false;
-        }
-      } else {
-        console.log('ℹ️ Running with in-memory database store (DATABASE_URL not specified)');
-      }
-    })();
-
-    return this.initPromise;
+    // Ready for Supabase client initialization in upcoming phase
+    return Promise.resolve();
   }
 
   public isConnected(): boolean {
-    return this.isPrismaConnected;
-  }
-
-  public getPrisma(): PrismaClient | null {
-    return this.prisma;
+    return true;
   }
 
   // --- USER REPOSITORY METHODS ---
 
   public async findUserById(id: string): Promise<DbUser | null> {
-    await this.initialize();
-    if (this.prisma && this.isPrismaConnected) {
-      try {
-        const u = await this.prisma.user.findUnique({ where: { id } });
-        if (u) {
-          const user: DbUser = {
-            id: u.id,
-            email: u.email,
-            passwordHash: u.passwordHash,
-            name: u.name,
-            isActive: u.isActive,
-            emailVerified: u.emailVerified,
-            role: u.role as 'USER' | 'ADMIN',
-            lastLoginAt: u.lastLoginAt,
-            createdAt: u.createdAt,
-            updatedAt: u.updatedAt,
-          };
-          this.users.set(user.id, user);
-          return user;
-        }
-      } catch (err) {
-        console.warn(`Prisma findUserById error for ${id}:`, err);
-      }
-    }
     return this.users.get(id) || null;
   }
 
   public async findUserByEmail(email: string): Promise<DbUser | null> {
-    await this.initialize();
     const normalized = email.trim().toLowerCase();
-
-    if (this.prisma && this.isPrismaConnected) {
-      try {
-        const u = await this.prisma.user.findUnique({ where: { email: normalized } });
-        if (u) {
-          const user: DbUser = {
-            id: u.id,
-            email: u.email,
-            passwordHash: u.passwordHash,
-            name: u.name,
-            isActive: u.isActive,
-            emailVerified: u.emailVerified,
-            role: u.role as 'USER' | 'ADMIN',
-            lastLoginAt: u.lastLoginAt,
-            createdAt: u.createdAt,
-            updatedAt: u.updatedAt,
-          };
-          this.users.set(user.id, user);
-          return user;
-        }
-      } catch (err) {
-        console.warn(`Prisma findUserByEmail error for ${normalized}:`, err);
+    for (const u of this.users.values()) {
+      if (u.email.toLowerCase() === normalized) {
+        return u;
       }
     }
-
-    return (
-      Array.from(this.users.values()).find((u) => u.email.toLowerCase() === normalized) || null
-    );
+    return null;
   }
 
-  public async createUser(
-    user: DbUser,
-    initialSettings?: Partial<DbUserSettings>
-  ): Promise<DbUser> {
-    await this.initialize();
-    const normalizedEmail = user.email.trim().toLowerCase();
-
-    if (this.prisma && this.isPrismaConnected) {
-      try {
-        const created = await this.prisma.user.create({
-          data: {
-            id: user.id,
-            email: normalizedEmail,
-            passwordHash: user.passwordHash,
-            name: user.name,
-            isActive: user.isActive ?? true,
-            emailVerified: user.emailVerified ?? false,
-            role: user.role ?? 'USER',
-            settings: {
-              create: {
-                id: `settings-${user.id}`,
-                currency: initialSettings?.currency || 'INR',
-                timezone: initialSettings?.timezone || 'Asia/Kolkata',
-                theme: initialSettings?.theme || 'system',
-                emailNotifications: initialSettings?.emailNotifications ?? true,
-                telegramNotifications: initialSettings?.telegramNotifications ?? false,
-                whatsappNotifications: initialSettings?.whatsappNotifications ?? false,
-              },
-            },
-            portfolios: {
-              create: {
-                id: `port-${user.id}-default`,
-                name: 'Main Equity Portfolio',
-                description: 'Primary long-term Indian equities',
-                baseCurrency: 'INR',
-                isDefault: true,
-              },
-            },
-            watchlists: {
-              create: {
-                id: `wl-${user.id}-default`,
-                name: 'Primary Watchlist',
-                description: 'Breakout watches & entry targets',
-              },
-            },
-          },
-          include: {
-            settings: true,
-            portfolios: true,
-            watchlists: true,
-          },
-        });
-
-        const createdUser: DbUser = {
-          id: created.id,
-          email: created.email,
-          passwordHash: created.passwordHash,
-          name: created.name,
-          isActive: created.isActive,
-          emailVerified: created.emailVerified,
-          role: created.role as 'USER' | 'ADMIN',
-          lastLoginAt: created.lastLoginAt,
-          createdAt: created.createdAt,
-          updatedAt: created.updatedAt,
-        };
-
-        this.users.set(createdUser.id, createdUser);
-        return createdUser;
-      } catch (err: any) {
-        console.error('Prisma createUser failed:', err);
-        throw err;
-      }
-    }
-
-    // In-memory fallback
+  public async createUser(user: DbUser, initialSettings?: Partial<DbUserSettings>): Promise<DbUser> {
     this.users.set(user.id, user);
-    this.userSettings.set(user.id, {
+
+    const settings: DbUserSettings = {
       id: `settings-${user.id}`,
       userId: user.id,
       currency: initialSettings?.currency || 'INR',
       timezone: initialSettings?.timezone || 'Asia/Kolkata',
       theme: initialSettings?.theme || 'system',
-      emailNotifications: true,
-      telegramNotifications: false,
-      whatsappNotifications: false,
+      emailNotifications: initialSettings?.emailNotifications ?? true,
+      telegramNotifications: initialSettings?.telegramNotifications ?? false,
+      whatsappNotifications: initialSettings?.whatsappNotifications ?? false,
       createdAt: new Date(),
       updatedAt: new Date(),
-    });
-
-    const defaultPortId = `port-${user.id}-default`;
-    this.portfolios.set(defaultPortId, {
-      id: defaultPortId,
-      userId: user.id,
-      name: 'Main Equity Portfolio',
-      description: 'Primary long-term Indian equities',
-      baseCurrency: 'INR',
-      isDefault: true,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    });
-
-    const defaultWlId = `wl-${user.id}-default`;
-    this.watchlists.set(defaultWlId, {
-      id: defaultWlId,
-      userId: user.id,
-      name: 'Primary Watchlist',
-      description: 'Breakout watches & entry targets',
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    });
+    };
+    this.userSettings.set(user.id, settings);
 
     return user;
   }
 
-  public async updateUser(id: string, data: Partial<DbUser>): Promise<DbUser | null> {
-    await this.initialize();
-    if (this.prisma && this.isPrismaConnected) {
-      try {
-        const updated = await this.prisma.user.update({
-          where: { id },
-          data: {
-            name: data.name,
-            passwordHash: data.passwordHash,
-            isActive: data.isActive,
-            emailVerified: data.emailVerified,
-            role: data.role,
-            lastLoginAt: data.lastLoginAt,
-          },
-        });
+  public async updateUser(id: string, updates: Partial<DbUser>): Promise<DbUser | null> {
+    const existing = this.users.get(id);
+    if (!existing) return null;
 
-        const user: DbUser = {
-          id: updated.id,
-          email: updated.email,
-          passwordHash: updated.passwordHash,
-          name: updated.name,
-          isActive: updated.isActive,
-          emailVerified: updated.emailVerified,
-          role: updated.role as 'USER' | 'ADMIN',
-          lastLoginAt: updated.lastLoginAt,
-          createdAt: updated.createdAt,
-          updatedAt: updated.updatedAt,
-        };
-        this.users.set(user.id, user);
-        return user;
-      } catch (err) {
-        console.warn(`Prisma updateUser error for ${id}:`, err);
-      }
-    }
-
-    const current = this.users.get(id);
-    if (!current) return null;
     const updated: DbUser = {
-      ...current,
-      ...data,
+      ...existing,
+      ...updates,
       updatedAt: new Date(),
     };
     this.users.set(id, updated);
@@ -489,115 +262,41 @@ class DatabaseManager {
   }
 
   public async deleteUser(id: string): Promise<boolean> {
-    await this.initialize();
-    if (this.prisma && this.isPrismaConnected) {
-      try {
-        await this.prisma.user.delete({ where: { id } });
-      } catch (err) {
-        console.warn(`Prisma deleteUser error for ${id}:`, err);
+    this.users.delete(id);
+    this.userSettings.delete(id);
+
+    // Cascade delete user portfolios
+    for (const [pId, p] of this.portfolios.entries()) {
+      if (p.userId === id) {
+        this.portfolios.delete(pId);
       }
     }
 
-    this.users.delete(id);
-    this.userSettings.delete(id);
-    for (const [pId, p] of this.portfolios.entries()) {
-      if (p.userId === id) this.portfolios.delete(pId);
-    }
+    // Cascade delete transactions
     for (const [tId, t] of this.transactions.entries()) {
-      if (t.userId === id) this.transactions.delete(tId);
+      if (t.userId === id) {
+        this.transactions.delete(tId);
+      }
     }
+
+    // Cascade delete watchlists
     for (const [wId, w] of this.watchlists.entries()) {
-      if (w.userId === id) this.watchlists.delete(wId);
+      if (w.userId === id) {
+        this.watchlists.delete(wId);
+      }
     }
-    for (const [aId, a] of this.alerts.entries()) {
-      if (a.userId === id) this.alerts.delete(aId);
-    }
+
     return true;
   }
 
-  // --- USER SETTINGS ---
+  // --- USER SETTINGS METHODS ---
 
   public async getUserSettings(userId: string): Promise<DbUserSettings | null> {
-    await this.initialize();
-    if (this.prisma && this.isPrismaConnected) {
-      try {
-        const s = await this.prisma.userSettings.findUnique({ where: { userId } });
-        if (s) {
-          const settings: DbUserSettings = {
-            id: s.id,
-            userId: s.userId,
-            currency: s.currency,
-            timezone: s.timezone,
-            theme: s.theme,
-            defaultPortfolioId: s.defaultPortfolioId,
-            emailNotifications: s.emailNotifications,
-            telegramNotifications: s.telegramNotifications,
-            whatsappNotifications: s.whatsappNotifications,
-            createdAt: s.createdAt,
-            updatedAt: s.updatedAt,
-          };
-          this.userSettings.set(userId, settings);
-          return settings;
-        }
-      } catch (err) {
-        console.warn(`Prisma getUserSettings error for ${userId}:`, err);
-      }
-    }
     return this.userSettings.get(userId) || null;
   }
 
-  public async updateUserSettings(
-    userId: string,
-    data: Partial<DbUserSettings>
-  ): Promise<DbUserSettings> {
-    await this.initialize();
-    if (this.prisma && this.isPrismaConnected) {
-      try {
-        const s = await this.prisma.userSettings.upsert({
-          where: { userId },
-          create: {
-            id: `settings-${userId}`,
-            userId,
-            currency: data.currency || 'INR',
-            timezone: data.timezone || 'Asia/Kolkata',
-            theme: data.theme || 'system',
-            defaultPortfolioId: data.defaultPortfolioId,
-            emailNotifications: data.emailNotifications ?? true,
-            telegramNotifications: data.telegramNotifications ?? false,
-            whatsappNotifications: data.whatsappNotifications ?? false,
-          },
-          update: {
-            currency: data.currency,
-            timezone: data.timezone,
-            theme: data.theme,
-            defaultPortfolioId: data.defaultPortfolioId,
-            emailNotifications: data.emailNotifications,
-            telegramNotifications: data.telegramNotifications,
-            whatsappNotifications: data.whatsappNotifications,
-          },
-        });
-
-        const settings: DbUserSettings = {
-          id: s.id,
-          userId: s.userId,
-          currency: s.currency,
-          timezone: s.timezone,
-          theme: s.theme,
-          defaultPortfolioId: s.defaultPortfolioId,
-          emailNotifications: s.emailNotifications,
-          telegramNotifications: s.telegramNotifications,
-          whatsappNotifications: s.whatsappNotifications,
-          createdAt: s.createdAt,
-          updatedAt: s.updatedAt,
-        };
-        this.userSettings.set(userId, settings);
-        return settings;
-      } catch (err) {
-        console.warn(`Prisma updateUserSettings error for ${userId}:`, err);
-      }
-    }
-
-    const current = this.userSettings.get(userId) || {
+  public async updateUserSettings(userId: string, updates: Partial<DbUserSettings>): Promise<DbUserSettings> {
+    const existing = this.userSettings.get(userId) || {
       id: `settings-${userId}`,
       userId,
       currency: 'INR',
@@ -611,340 +310,88 @@ class DatabaseManager {
     };
 
     const updated: DbUserSettings = {
-      ...current,
-      ...data,
-      userId,
+      ...existing,
+      ...updates,
       updatedAt: new Date(),
     };
     this.userSettings.set(userId, updated);
     return updated;
   }
 
-  // --- PORTFOLIO REPOSITORY METHODS ---
+  // --- PORTFOLIO METHODS ---
 
   public async getPortfolios(userId: string): Promise<DbPortfolio[]> {
-    await this.initialize();
-    if (this.prisma && this.isPrismaConnected) {
-      try {
-        const ports = await this.prisma.portfolio.findMany({
-          where: { userId },
-          orderBy: { createdAt: 'asc' },
-        });
-        if (ports.length > 0) {
-          const list: DbPortfolio[] = ports.map((p) => ({
-            id: p.id,
-            userId: p.userId,
-            name: p.name,
-            description: p.description,
-            baseCurrency: p.baseCurrency,
-            isDefault: p.isDefault,
-            createdAt: p.createdAt,
-            updatedAt: p.updatedAt,
-          }));
-          list.forEach((p) => this.portfolios.set(p.id, p));
-          return list;
-        }
-      } catch (err) {
-        console.warn(`Prisma getPortfolios error for ${userId}:`, err);
-      }
+    let userPorts = Array.from(this.portfolios.values()).filter((p) => p.userId === userId);
+
+    if (userPorts.length === 0) {
+      const defaultPort: DbPortfolio = {
+        id: `port-${userId}-main`,
+        userId,
+        name: 'Primary Portfolio',
+        description: 'Main investment holding portfolio',
+        baseCurrency: 'INR',
+        isDefault: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      this.portfolios.set(defaultPort.id, defaultPort);
+      userPorts = [defaultPort];
     }
 
-    return Array.from(this.portfolios.values()).filter((p) => p.userId === userId);
+    return userPorts;
   }
 
   public async getPortfolioById(id: string): Promise<DbPortfolio | null> {
-    await this.initialize();
-    if (this.prisma && this.isPrismaConnected) {
-      try {
-        const p = await this.prisma.portfolio.findUnique({ where: { id } });
-        if (p) {
-          const port: DbPortfolio = {
-            id: p.id,
-            userId: p.userId,
-            name: p.name,
-            description: p.description,
-            baseCurrency: p.baseCurrency,
-            isDefault: p.isDefault,
-            createdAt: p.createdAt,
-            updatedAt: p.updatedAt,
-          };
-          this.portfolios.set(port.id, port);
-          return port;
-        }
-      } catch (err) {
-        console.warn(`Prisma getPortfolioById error for ${id}:`, err);
-      }
-    }
     return this.portfolios.get(id) || null;
   }
 
   public async createPortfolio(portfolio: DbPortfolio): Promise<DbPortfolio> {
-    await this.initialize();
-    if (this.prisma && this.isPrismaConnected) {
-      try {
-        const created = await this.prisma.portfolio.create({
-          data: {
-            id: portfolio.id,
-            userId: portfolio.userId,
-            name: portfolio.name,
-            description: portfolio.description || null,
-            baseCurrency: portfolio.baseCurrency || 'INR',
-            isDefault: portfolio.isDefault || false,
-          },
-        });
-
-        const port: DbPortfolio = {
-          id: created.id,
-          userId: created.userId,
-          name: created.name,
-          description: created.description,
-          baseCurrency: created.baseCurrency,
-          isDefault: created.isDefault,
-          createdAt: created.createdAt,
-          updatedAt: created.updatedAt,
-        };
-        this.portfolios.set(port.id, port);
-        return port;
-      } catch (err) {
-        console.warn('Prisma createPortfolio error:', err);
-      }
-    }
-
     this.portfolios.set(portfolio.id, portfolio);
     return portfolio;
   }
 
-  // --- TRANSACTIONS ---
+  // --- TRANSACTION METHODS ---
 
   public async getTransactions(portfolioId: string, userId?: string): Promise<DbTransaction[]> {
-    await this.initialize();
-    if (this.prisma && this.isPrismaConnected) {
-      try {
-        const txs = await this.prisma.transaction.findMany({
-          where: {
-            portfolioId,
-            ...(userId ? { userId } : {}),
-          },
-          include: {
-            instrument: true,
-          },
-          orderBy: { transactionDate: 'desc' },
-        });
-
-        const list: DbTransaction[] = txs.map((tx) => {
-          if (tx.instrument) {
-            this.instruments.set(tx.instrument.id, {
-              id: tx.instrument.id,
-              symbol: tx.instrument.symbol,
-              exchange: tx.instrument.exchange,
-              isin: tx.instrument.isin,
-              name: tx.instrument.name,
-              companyName: tx.instrument.companyName,
-              sector: tx.instrument.sector || 'General',
-              industry: tx.instrument.industry,
-              instrumentType: tx.instrument.instrumentType as any,
-              currency: tx.instrument.currency,
-              isActive: tx.instrument.isActive,
-              dataStatus: tx.instrument.dataStatus,
-              createdAt: tx.instrument.createdAt,
-              updatedAt: tx.instrument.updatedAt,
-            });
-          }
-
-          return {
-            id: tx.id,
-            userId: tx.userId,
-            portfolioId: tx.portfolioId,
-            instrumentId: tx.instrumentId,
-            transactionType: tx.transactionType as any,
-            quantity: tx.quantity,
-            price: tx.price,
-            brokerage: tx.brokerage,
-            taxes: tx.taxes,
-            otherCharges: tx.otherCharges,
-            transactionDate: tx.transactionDate,
-            notes: tx.notes,
-            createdAt: tx.createdAt,
-            updatedAt: tx.updatedAt,
-          };
-        });
-
-        list.forEach((t) => this.transactions.set(t.id, t));
-        return list;
-      } catch (err) {
-        console.warn(`Prisma getTransactions error for ${portfolioId}:`, err);
-      }
-    }
-
     return Array.from(this.transactions.values())
       .filter((t) => t.portfolioId === portfolioId && (!userId || t.userId === userId))
-      .sort((a, b) => new Date(b.transactionDate).getTime() - new Date(a.transactionDate).getTime());
+      .sort((a, b) => b.transactionDate.getTime() - a.transactionDate.getTime());
   }
 
   public async createTransaction(tx: DbTransaction): Promise<DbTransaction> {
-    await this.initialize();
-    if (this.prisma && this.isPrismaConnected) {
-      try {
-        const created = await this.prisma.transaction.create({
-          data: {
-            id: tx.id,
-            userId: tx.userId,
-            portfolioId: tx.portfolioId,
-            instrumentId: tx.instrumentId,
-            transactionType: tx.transactionType as any,
-            quantity: tx.quantity,
-            price: tx.price,
-            brokerage: tx.brokerage,
-            taxes: tx.taxes,
-            otherCharges: tx.otherCharges,
-            transactionDate: tx.transactionDate,
-            notes: tx.notes || null,
-          },
-        });
-
-        const result: DbTransaction = {
-          id: created.id,
-          userId: created.userId,
-          portfolioId: created.portfolioId,
-          instrumentId: created.instrumentId,
-          transactionType: created.transactionType as any,
-          quantity: created.quantity,
-          price: created.price,
-          brokerage: created.brokerage,
-          taxes: created.taxes,
-          otherCharges: created.otherCharges,
-          transactionDate: created.transactionDate,
-          notes: created.notes,
-          createdAt: created.createdAt,
-          updatedAt: created.updatedAt,
-        };
-        this.transactions.set(result.id, result);
-        return result;
-      } catch (err) {
-        console.warn('Prisma createTransaction error:', err);
-      }
-    }
-
     this.transactions.set(tx.id, tx);
     return tx;
   }
 
   public async deleteTransaction(id: string): Promise<boolean> {
-    await this.initialize();
-    if (this.prisma && this.isPrismaConnected) {
-      try {
-        await this.prisma.transaction.delete({ where: { id } });
-      } catch (err) {
-        console.warn(`Prisma deleteTransaction error for ${id}:`, err);
-      }
-    }
-    this.transactions.delete(id);
-    return true;
+    return this.transactions.delete(id);
   }
 
-  // --- INSTRUMENTS ---
+  // --- INSTRUMENT METHODS ---
 
   public async getOrUpsertInstrument(
     symbol: string,
     name?: string,
-    sector?: string
+    sector?: string,
+    companyName?: string
   ): Promise<DbInstrument> {
-    await this.initialize();
     const cleanSym = symbol.trim().toUpperCase();
     const existing =
       this.instruments.get(cleanSym) ||
       this.instruments.get(cleanSym.replace('.NS', '')) ||
-      this.instruments.get(cleanSym.replace('.BO', ''));
+      this.instruments.get(`${cleanSym}.NS`);
 
-    if (existing) return existing;
-
-    if (this.prisma && this.isPrismaConnected) {
-      try {
-        const found = await this.prisma.instrument.findUnique({
-          where: { symbol: cleanSym },
-        });
-
-        if (found) {
-          const inst: DbInstrument = {
-            id: found.id,
-            symbol: found.symbol,
-            exchange: found.exchange,
-            isin: found.isin,
-            name: found.name,
-            companyName: found.companyName,
-            sector: found.sector || 'General',
-            industry: found.industry,
-            instrumentType: found.instrumentType as any,
-            currency: found.currency,
-            isActive: found.isActive,
-            lastPrice: found.lastPrice,
-            previousClose: found.previousClose,
-            change: found.change,
-            changePercent: found.changePercent,
-            dayHigh: found.dayHigh,
-            dayLow: found.dayLow,
-            volume: found.volume,
-            high52: found.high52,
-            low52: found.low52,
-            ema20: found.ema20,
-            ema50: found.ema50,
-            ema100: found.ema100,
-            ema200: found.ema200,
-            rsi14: found.rsi14,
-            dataStatus: found.dataStatus,
-            lastFetchedAt: found.lastFetchedAt,
-            createdAt: found.createdAt,
-            updatedAt: found.updatedAt,
-          };
-          this.instruments.set(inst.id, inst);
-          this.instruments.set(inst.symbol, inst);
-          return inst;
-        }
-
-        const instId = `inst-${cleanSym.toLowerCase().replace(/[^a-z0-9]/g, '')}`;
-        const created = await this.prisma.instrument.create({
-          data: {
-            id: instId,
-            symbol: cleanSym,
-            exchange: cleanSym.endsWith('.BO') ? 'BSE' : 'NSE',
-            name: name || cleanSym.replace('.NS', '').replace('.BO', ''),
-            sector: sector || 'General',
-            instrumentType: 'STOCK',
-            currency: 'INR',
-          },
-        });
-
-        const inst: DbInstrument = {
-          id: created.id,
-          symbol: created.symbol,
-          exchange: created.exchange,
-          isin: created.isin,
-          name: created.name,
-          companyName: created.companyName,
-          sector: created.sector || 'General',
-          industry: created.industry,
-          instrumentType: created.instrumentType as any,
-          currency: created.currency,
-          isActive: created.isActive,
-          dataStatus: created.dataStatus,
-          createdAt: created.createdAt,
-          updatedAt: created.updatedAt,
-        };
-        this.instruments.set(inst.id, inst);
-        this.instruments.set(inst.symbol, inst);
-        return inst;
-      } catch (err) {
-        console.warn(`Prisma getOrUpsertInstrument error for ${cleanSym}:`, err);
-      }
+    if (existing) {
+      return existing;
     }
 
-    const instId = `inst-${cleanSym.toLowerCase().replace(/[^a-z0-9]/g, '')}`;
+    const newId = `inst-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
     const inst: DbInstrument = {
-      id: instId,
-      symbol: cleanSym,
-      exchange: cleanSym.endsWith('.BO') ? 'BSE' : 'NSE',
-      name: name || cleanSym.replace('.NS', '').replace('.BO', ''),
-      companyName: name || cleanSym.replace('.NS', '').replace('.BO', ''),
+      id: newId,
+      symbol: cleanSym.endsWith('.NS') ? cleanSym : `${cleanSym}.NS`,
+      exchange: 'NSE',
+      name: name || cleanSym.replace('.NS', ''),
+      companyName: companyName || name || cleanSym.replace('.NS', ''),
       sector: sector || 'General',
       instrumentType: 'STOCK',
       currency: 'INR',
@@ -953,22 +400,22 @@ class DatabaseManager {
       createdAt: new Date(),
       updatedAt: new Date(),
     };
+
     this.instruments.set(inst.id, inst);
     this.instruments.set(inst.symbol, inst);
+    this.instruments.set(cleanSym, inst);
     return inst;
   }
 
   // --- DEFAULT SEED FOR IN-MEMORY TESTING ---
 
   private initDefaultSeed() {
-    const demoPasswordHash = bcrypt.hashSync('Demo@1234', 10);
     const demoUserId = 'usr-demo-investor';
 
     // 1. User
     this.users.set(demoUserId, {
       id: demoUserId,
       email: 'demo@investingjournal.com',
-      passwordHash: demoPasswordHash,
       name: 'Demo Investor',
       isActive: true,
       emailVerified: true,

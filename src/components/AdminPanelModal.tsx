@@ -18,7 +18,6 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({ isOpen, onClos
   const [showCreateUser, setShowCreateUser] = useState(false);
   const [newUserName, setNewUserName] = useState('');
   const [newUserEmail, setNewUserEmail] = useState('');
-  const [newUserPassword, setNewUserPassword] = useState('Investor@1234');
   const [newUserRole, setNewUserRole] = useState<'USER' | 'ADMIN'>('USER');
   const [isCreatingUser, setIsCreatingUser] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
@@ -74,7 +73,6 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({ isOpen, onClos
       const res = await apiClient.createAdminUser({
         name: newUserName.trim(),
         email: newUserEmail.trim(),
-        password: newUserPassword,
         role: newUserRole,
       });
 
@@ -82,7 +80,6 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({ isOpen, onClos
         setCreateSuccess(`User ${res.data.name} (${res.data.email}) created successfully!`);
         setNewUserName('');
         setNewUserEmail('');
-        setNewUserPassword('Investor@1234');
         setShowCreateUser(false);
         loadAdminData();
       } else {
@@ -304,21 +301,6 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({ isOpen, onClos
                         value={newUserEmail}
                         onChange={(e) => setNewUserEmail(e.target.value)}
                         placeholder="investor@example.com"
-                        className="w-full px-3 py-1.5 rounded bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-xs text-slate-900 dark:text-white focus:outline-hidden focus:border-indigo-500 font-mono"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-[11px] font-mono text-slate-600 dark:text-slate-400 mb-1">
-                        Password *
-                      </label>
-                      <input
-                        id="admin-create-password"
-                        type="password"
-                        required
-                        value={newUserPassword}
-                        onChange={(e) => setNewUserPassword(e.target.value)}
-                        placeholder="Min 6 characters"
                         className="w-full px-3 py-1.5 rounded bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-xs text-slate-900 dark:text-white focus:outline-hidden focus:border-indigo-500 font-mono"
                       />
                     </div>

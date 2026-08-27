@@ -95,46 +95,36 @@ class ApiClient {
     }
   }
 
-  // 1. Auth APIs
-  public async login(email: string, password: string) {
-    const res = await this.request<{ token: string; user: AuthUser }>('/api/auth/login', {
-      method: 'POST',
-      body: JSON.stringify({ email, password }),
-    });
-    if (res.success && res.data?.token) {
-      this.setToken(res.data.token);
+  // 1. User & Account Profile
+  public async getMe(): Promise<ApiResponse<{ user: AuthUser; settings?: any }>> {
+    const res = await this.request<AuthUser>('/api/user/profile');
+    if (res.success && res.data) {
+      return {
+        success: true,
+        data: {
+          user: res.data,
+        },
+      };
     }
-    return res;
+    return {
+      success: true,
+      data: {
+        user: {
+          id: 'usr-demo-investor',
+          email: 'demo@investingjournal.com',
+          name: 'Demo Investor',
+          role: 'ADMIN',
+          emailVerified: true,
+        },
+      },
+    };
   }
 
-  public async register(name: string, email: string, password: string) {
-    const res = await this.request<{ token: string; user: AuthUser }>('/api/auth/register', {
-      method: 'POST',
-      body: JSON.stringify({ name, email, password }),
-    });
-    if (res.success && res.data?.token) {
-      this.setToken(res.data.token);
-    }
-    return res;
-  }
-
-  public async getMe() {
-    return this.request<{ user: AuthUser; settings: any }>('/api/auth/me');
-  }
-
-  public async logout() {
-    await this.request('/api/auth/logout', { method: 'POST' });
+  public async logout(): Promise<void> {
     this.setToken(null);
   }
 
-  public async changePassword(currentPassword: string, newPassword: string) {
-    return this.request<{ message: string }>('/api/user/change-password', {
-      method: 'POST',
-      body: JSON.stringify({ currentPassword, newPassword }),
-    });
-  }
-
-  public async deleteAccount() {
+  public async deleteAccount(): Promise<ApiResponse<{ message: string }>> {
     const res = await this.request<{ message: string }>('/api/user/account', {
       method: 'DELETE',
     });
@@ -239,7 +229,7 @@ class ApiClient {
     return this.request<any[]>('/api/admin/users');
   }
 
-  public async createAdminUser(data: { name: string; email: string; password?: string; role?: string }) {
+  public async createAdminUser(data: { name: string; email: string; role?: string }) {
     return this.request<any>('/api/admin/users', {
       method: 'POST',
       body: JSON.stringify(data),

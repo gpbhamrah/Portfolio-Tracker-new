@@ -1,8 +1,6 @@
 import express from 'express';
-import cookieParser from 'cookie-parser';
 import cors from 'cors';
 
-import { authRouter } from './routes/authRoutes';
 import { portfolioRouter } from './routes/portfolioRoutes';
 import { watchlistRouter } from './routes/watchlistRoutes';
 import { alertRouter } from './routes/alertRoutes';
@@ -27,13 +25,11 @@ app.use(
   })
 );
 
-app.use(cookieParser());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// 1. Mount Modular REST API Routes
+// 1. Mount Modular REST API Routes (Prepared for Supabase)
 app.use('/api/health', healthRouter);
-app.use('/api/auth', authRouter);
 app.use('/api/portfolios', portfolioRouter);
 app.use('/api/watchlists', watchlistRouter);
 app.use('/api/alerts', alertRouter);
@@ -42,7 +38,7 @@ app.use('/api/user', userRouter);
 app.use('/api/users', userRouter);
 app.use('/api/admin', adminRouter);
 
-// 2. Compatibility Endpoints for standalone queries
+// 2. Compatibility Endpoints for standalone market queries
 app.get('/api/market-data', async (req, res) => {
   try {
     const rawSymbols = ((req.query.symbols as string) || '')

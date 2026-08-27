@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 
+import { supabaseSessionMiddleware } from './middleware/supabaseAuth';
 import { portfolioRouter } from './routes/portfolioRoutes';
 import { watchlistRouter } from './routes/watchlistRoutes';
 import { alertRouter } from './routes/alertRoutes';
@@ -27,6 +28,9 @@ app.use(
 
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// Global Supabase session refresh & context middleware
+app.use(supabaseSessionMiddleware);
 
 // 1. Mount Modular REST API Routes (Prepared for Supabase)
 app.use('/api/health', healthRouter);

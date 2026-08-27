@@ -1,3 +1,5 @@
+import { supabase } from '../lib/supabase/client';
+
 export interface AuthUser {
   id: string;
   email: string;
@@ -34,8 +36,17 @@ class ApiClient {
     }
   }
 
-  public getToken(): string | null {
-    return this.token;
+  public async getToken(): Promise<string | null> {
+    if (this.token) return this.token;
+    try {
+      const { data } = await supabase.auth.getSession();
+      if (data?.session?.access_token) {
+        return data.session.access_token;
+      }
+    } catch {
+      // Ignored
+    }
+    return null;
   }
 
   private async request<T = any>(endpoint: string, options: RequestInit = {}): Promise<ApiResponse<T>> {
@@ -49,8 +60,9 @@ class ApiClient {
       ...(options.headers as Record<string, string>),
     };
 
-    if (this.token) {
-      headers['Authorization'] = `Bearer ${this.token}`;
+    const activeToken = await this.getToken();
+    if (activeToken) {
+      headers['Authorization'] = `Bearer ${activeToken}`;
     }
 
     try {

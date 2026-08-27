@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { dbManager } from '../db/dbManager';
+import { supabaseSessionMiddleware, SupabaseAuthRequest } from './supabaseAuth';
 
 export interface AuthTokenPayload {
   userId: string;
@@ -7,45 +8,18 @@ export interface AuthTokenPayload {
   role: 'USER' | 'ADMIN';
 }
 
-export interface AuthenticatedRequest extends Request {
-  user?: AuthTokenPayload;
-}
+export interface AuthenticatedRequest extends SupabaseAuthRequest {}
 
 /**
- * Authentication Boundary Middleware (Prepared for Supabase Auth JWT)
- * In the upcoming phase, this will verify Supabase JWT tokens via Supabase Auth.
- * For now, it extracts user context cleanly without legacy custom JWT/bcrypt layers.
+ * Authentication Boundary Middleware (Supabase Auth Session + Local Fallback)
+ * Automatically verifies & refreshes sessions via Supabase.
  */
 export async function authenticateToken(
   req: AuthenticatedRequest,
   res: Response,
   next: NextFunction
 ): Promise<void> {
-  try {
-    const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
-
-    // Use default active demo user or token identity
-    const defaultUser = Array.from(dbManager.users.values())[0] || {
-      id: 'usr-demo-investor',
-      email: 'demo@investingjournal.com',
-      role: 'ADMIN' as const,
-    };
-
-    req.user = {
-      userId: defaultUser.id,
-      email: defaultUser.email,
-      role: defaultUser.role,
-    };
-
-    next();
-  } catch (err: any) {
-    console.error('Authentication middleware error:', err);
-    res.status(500).json({
-      success: false,
-      error: { code: 'AUTH_ERROR', message: 'Internal authentication error' },
-    });
-  }
+  return supabaseSessionMiddleware(req, res, next);
 }
 
 /**

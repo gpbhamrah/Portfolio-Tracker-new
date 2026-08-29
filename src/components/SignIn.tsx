@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { LogIn, Mail, Lock, AlertCircle } from 'lucide-react';
-// @ts-ignore
-import { supabase } from '../supabaseClient';
+import { supabase, isSupabaseConfigured } from '../lib/supabase/client';
 
 interface SignInProps {
   onToggleSignUp?: () => void;
@@ -17,16 +16,41 @@ export const SignIn: React.FC<SignInProps> = ({ onToggleSignUp, onSuccess }) => 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+
+    const cleanEmail = email.trim();
+    if (!cleanEmail || !cleanEmail.includes('@')) {
+      setError('Please enter a valid email address.');
+      return;
+    }
+
+    if (!password) {
+      setError('Please enter your password.');
+      return;
+    }
+
+    if (!isSupabaseConfigured()) {
+      setError(
+        'Supabase authentication is not configured. Please ensure VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY are set in your environment.'
+      );
+      return;
+    }
+
     setLoading(true);
 
     try {
       const { data, error: signInError } = await supabase.auth.signInWithPassword({
-        email,
+        email: cleanEmail,
         password,
       });
 
       if (signInError) {
-        setError(signInError.message);
+        let msg = signInError.message;
+        if (msg.toLowerCase().includes('invalid login credentials')) {
+          msg = 'Invalid email or password. Please check your credentials and try again.';
+        } else if (msg.toLowerCase().includes('email not confirmed')) {
+          msg = 'Please verify your email address before signing in. Check your inbox for the verification link.';
+        }
+        setError(msg);
         setLoading(false);
         return;
       }
@@ -35,10 +59,9 @@ export const SignIn: React.FC<SignInProps> = ({ onToggleSignUp, onSuccess }) => 
         if (onSuccess) {
           onSuccess();
         }
-        window.location.href = '/';
       }
     } catch (err: any) {
-      setError(err?.message || 'An unexpected error occurred during sign in.');
+      setError(err?.message || 'Unable to sign in. Please check your internet connection.');
     } finally {
       setLoading(false);
     }

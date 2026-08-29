@@ -1,10 +1,11 @@
 import { Router } from 'express';
 import { dbManager, DbAlert } from '../db/dbManager';
-import { authenticateToken, AuthenticatedRequest } from '../middleware/auth';
+import { authenticateToken, requireAuth, AuthenticatedRequest } from '../middleware/auth';
 import { validateRequest, AlertSchema } from '../middleware/validation';
 
 export const alertRouter = Router();
 alertRouter.use(authenticateToken);
+alertRouter.use(requireAuth);
 
 // GET /api/alerts - List all alerts for user
 alertRouter.get('/', (req: AuthenticatedRequest, res) => {

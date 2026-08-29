@@ -1,9 +1,10 @@
 import { Router } from 'express';
 import { dbManager } from '../db/dbManager';
-import { authenticateToken, AuthenticatedRequest } from '../middleware/auth';
+import { authenticateToken, requireAuth, AuthenticatedRequest } from '../middleware/auth';
 
 export const userRouter = Router();
 userRouter.use(authenticateToken);
+userRouter.use(requireAuth);
 
 // GET /api/user/profile
 userRouter.get('/profile', async (req: AuthenticatedRequest, res) => {

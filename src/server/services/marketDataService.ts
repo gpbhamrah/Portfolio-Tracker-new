@@ -1,4 +1,4 @@
-import { calculateAllEMAs, calculateRSI } from './calculations';
+import { calculateAllEMAs, calculateRealEMA, calculateRSI } from './calculations';
 
 export interface MarketQuote {
   symbol: string;
@@ -59,11 +59,19 @@ interface CachedHistory {
   cachedAt: number;
 }
 
+// In-Memory index cache
+interface CachedIndexData {
+  data: { nifty: any; sectors: any[] };
+  cachedAt: number;
+}
+
 export class YahooMarketDataProvider implements MarketDataProvider {
   private quoteCache: Map<string, CachedQuote> = new Map();
   private historyCache: Map<string, CachedHistory> = new Map();
+  private indexCache: CachedIndexData | null = null;
   private pendingRequests: Map<string, Promise<Record<string, MarketQuote>>> = new Map();
   private readonly QUOTE_TTL_MS = 20 * 1000; // 20 seconds TTL
+  private readonly INDEX_TTL_MS = 30 * 1000; // 30 seconds TTL
   private readonly HISTORY_TTL_MS = 30 * 60 * 1000; // 30 minutes TTL
 
   private normalizeSymbol(sym: string): string {
@@ -72,6 +80,31 @@ export class YahooMarketDataProvider implements MarketDataProvider {
       return clean;
     }
     return `${clean}.NS`;
+  }
+
+  /**
+   * Determine whether the National Stock Exchange (NSE) is currently open.
+   * Standard regular hours: Monday-Friday, 09:15 to 15:30 IST (UTC+5:30).
+   */
+  private isNseMarketOpen(metaRegularPeriod?: { start?: number; end?: number }): boolean {
+    const nowSec = Math.floor(Date.now() / 1000);
+    if (metaRegularPeriod?.start && metaRegularPeriod?.end) {
+      if (nowSec >= metaRegularPeriod.start && nowSec <= metaRegularPeriod.end) {
+        return true;
+      }
+    }
+
+    try {
+      const istString = new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' });
+      const istDate = new Date(istString);
+      const day = istDate.getDay(); // 0 = Sunday, 6 = Saturday
+      if (day === 0 || day === 6) return false;
+
+      const totalMinutes = istDate.getHours() * 60 + istDate.getMinutes();
+      return totalMinutes >= 9 * 60 + 15 && totalMinutes <= 15 * 60 + 30;
+    } catch {
+      return false;
+    }
   }
 
   public async getQuote(symbol: string): Promise<MarketQuote | null> {
@@ -135,7 +168,8 @@ export class YahooMarketDataProvider implements MarketDataProvider {
       const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(symList)}&formatted=false`;
       const response = await fetch(url, {
         headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
           Accept: 'application/json',
         },
       });
@@ -145,84 +179,111 @@ export class YahooMarketDataProvider implements MarketDataProvider {
         const items = json?.quoteResponse?.result || [];
 
         for (const item of items) {
-          const sym = item.symbol.toUpperCase();
+          const sym = (item.symbol || '').toUpperCase();
+          if (!sym) continue;
+
+          const price = Number(item.regularMarketPrice ?? item.chartPreviousClose ?? item.previousClose ?? 0);
+          const prevClose = Number(item.regularMarketPreviousClose ?? item.previousClose ?? item.chartPreviousClose ?? price);
+          const change = Number(item.regularMarketChange ?? (price && prevClose ? price - prevClose : 0));
+          const changePercent = Number(
+            item.regularMarketChangePercent ?? (prevClose ? ((price - prevClose) / prevClose) * 100 : 0)
+          );
+
           const quote: MarketQuote = {
             symbol: sym,
             name: item.shortName || item.longName || sym,
-            price: Number(item.regularMarketPrice || 0),
-            previousClose: Number(item.regularMarketPreviousClose || item.regularMarketPrice || 0),
-            change: Number(item.regularMarketChange || 0),
-            changePercent: Number(item.regularMarketChangePercent || 0),
-            dayHigh: Number(item.regularMarketDayHigh || item.regularMarketPrice || 0),
-            dayLow: Number(item.regularMarketDayLow || item.regularMarketPrice || 0),
-            volume: Number(item.regularMarketVolume || 0),
-            high52: Number(item.fiftyTwoWeekHigh || 0),
-            low52: Number(item.fiftyTwoWeekLow || 0),
+            price: Math.round(price * 100) / 100,
+            previousClose: Math.round(prevClose * 100) / 100,
+            change: Math.round(change * 100) / 100,
+            changePercent: Math.round(changePercent * 100) / 100,
+            dayHigh: item.regularMarketDayHigh ? Math.round(Number(item.regularMarketDayHigh) * 100) / 100 : undefined,
+            dayLow: item.regularMarketDayLow ? Math.round(Number(item.regularMarketDayLow) * 100) / 100 : undefined,
+            volume: item.regularMarketVolume ? Number(item.regularMarketVolume) : undefined,
+            high52: item.fiftyTwoWeekHigh ? Math.round(Number(item.fiftyTwoWeekHigh) * 100) / 100 : undefined,
+            low52: item.fiftyTwoWeekLow ? Math.round(Number(item.fiftyTwoWeekLow) * 100) / 100 : undefined,
             timestamp: new Date().toISOString(),
             status: 'fresh',
-            provider: 'Yahoo Finance Realtime Feed',
+            provider: 'Yahoo Finance Live Feed',
           };
 
           output[sym] = quote;
         }
       }
     } catch (err) {
-      console.warn('Network quote fetch error:', err);
+      console.warn('Batch quote network query error:', err);
     }
 
-    // Fill any missing with realistic simulated market quotes or stale cache
+    // Check missing symbols against v8 chart fallback
+    const missing = symbols.filter((s) => !output[s]);
+    if (missing.length > 0) {
+      await Promise.allSettled(
+        missing.map(async (sym) => {
+          try {
+            const chartUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(
+              sym
+            )}?interval=1d&range=5d`;
+            const chartRes = await fetch(chartUrl, {
+              headers: {
+                'User-Agent':
+                  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+              },
+            });
+
+            if (chartRes.ok) {
+              const chartData: any = await chartRes.json();
+              const meta = chartData?.chart?.result?.[0]?.meta;
+              if (meta) {
+                const price = Number(meta.regularMarketPrice ?? meta.chartPreviousClose ?? 0);
+                const prev = Number(meta.chartPreviousClose ?? meta.previousClose ?? price);
+                const change = price - prev;
+                const changePercent = prev ? (change / prev) * 100 : 0;
+
+                const quote: MarketQuote = {
+                  symbol: sym,
+                  name: meta.shortName || meta.symbol || sym,
+                  price: Math.round(price * 100) / 100,
+                  previousClose: Math.round(prev * 100) / 100,
+                  change: Math.round(change * 100) / 100,
+                  changePercent: Math.round(changePercent * 100) / 100,
+                  dayHigh: meta.regularMarketDayHigh ? Math.round(Number(meta.regularMarketDayHigh) * 100) / 100 : undefined,
+                  dayLow: meta.regularMarketDayLow ? Math.round(Number(meta.regularMarketDayLow) * 100) / 100 : undefined,
+                  timestamp: new Date().toISOString(),
+                  status: 'delayed',
+                  provider: 'Yahoo Finance Chart Feed',
+                };
+                output[sym] = quote;
+              }
+            }
+          } catch {
+            // ignore
+          }
+        })
+      );
+    }
+
+    // For any remaining missing symbols: return cached if available, else mark unavailable (never fake price)
     for (const sym of symbols) {
       if (!output[sym]) {
         const cached = this.quoteCache.get(sym);
         if (cached) {
           output[sym] = { ...cached.data, status: 'stale' };
         } else {
-          // Provide default structure
-          output[sym] = this.getFallbackQuote(sym);
+          output[sym] = {
+            symbol: sym,
+            name: sym,
+            price: 0,
+            previousClose: 0,
+            change: 0,
+            changePercent: 0,
+            timestamp: new Date().toISOString(),
+            status: 'unavailable',
+            provider: 'N/A',
+          };
         }
       }
     }
 
     return output;
-  }
-
-  private getFallbackQuote(symbol: string): MarketQuote {
-    // Standard baseline prices for top Indian stocks
-    const BASELINES: Record<string, { price: number; name: string }> = {
-      'RELIANCE.NS': { price: 2985.4, name: 'Reliance Industries Ltd.' },
-      'TCS.NS': { price: 4120.5, name: 'Tata Consultancy Services' },
-      'HDFCBANK.NS': { price: 1645.2, name: 'HDFC Bank Ltd.' },
-      'INFY.NS': { price: 1845.0, name: 'Infosys Ltd.' },
-      'TATAMOTORS.NS': { price: 995.6, name: 'Tata Motors Ltd.' },
-      'ITC.NS': { price: 485.3, name: 'ITC Ltd.' },
-      'BHARTIARTL.NS': { price: 1590.0, name: 'Bharti Airtel Ltd.' },
-      'ICICIBANK.NS': { price: 1180.0, name: 'ICICI Bank Ltd.' },
-      'SBIN.NS': { price: 810.0, name: 'State Bank of India' },
-      'LICI.NS': { price: 1040.0, name: 'Life Insurance Corp of India' },
-    };
-
-    const clean = symbol.toUpperCase();
-    const base = BASELINES[clean] || BASELINES[`${clean}.NS`] || { price: 1000.0, name: symbol };
-    const prev = base.price * 0.992;
-    const change = base.price - prev;
-    const changePercent = (change / prev) * 100;
-
-    return {
-      symbol: clean,
-      name: base.name,
-      price: Math.round(base.price * 100) / 100,
-      previousClose: Math.round(prev * 100) / 100,
-      change: Math.round(change * 100) / 100,
-      changePercent: Math.round(changePercent * 100) / 100,
-      dayHigh: Math.round(base.price * 1.015 * 100) / 100,
-      dayLow: Math.round(base.price * 0.985 * 100) / 100,
-      volume: 2500000,
-      high52: Math.round(base.price * 1.25 * 100) / 100,
-      low52: Math.round(base.price * 0.75 * 100) / 100,
-      timestamp: new Date().toISOString(),
-      status: 'delayed',
-      provider: 'Market Data Service (Cached Baseline)',
-    };
   }
 
   public async getHistoricalPrices(symbol: string, range = '1y'): Promise<HistoricalCandle[]> {
@@ -238,7 +299,8 @@ export class YahooMarketDataProvider implements MarketDataProvider {
       const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(norm)}?range=${range}&interval=1d`;
       const res = await fetch(url, {
         headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36',
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
         },
       });
 
@@ -248,149 +310,288 @@ export class YahooMarketDataProvider implements MarketDataProvider {
         if (result && result.timestamp && result.indicators?.quote?.[0]) {
           const timestamps: number[] = result.timestamp;
           const q = result.indicators.quote[0];
-          const candles: HistoricalCandle[] = [];
+          const candles: { timestamp: number; candle: HistoricalCandle }[] = [];
 
           for (let i = 0; i < timestamps.length; i++) {
-            if (q.close[i] !== null && q.close[i] !== undefined) {
+            const closeVal = q.close?.[i];
+            if (typeof closeVal === 'number' && !isNaN(closeVal) && closeVal > 0) {
               candles.push({
-                date: new Date(timestamps[i] * 1000).toISOString().slice(0, 10),
-                open: Number(q.open[i] || q.close[i]),
-                high: Number(q.high[i] || q.close[i]),
-                low: Number(q.low[i] || q.close[i]),
-                close: Number(q.close[i]),
-                volume: Number(q.volume?.[i] || 0),
+                timestamp: timestamps[i],
+                candle: {
+                  date: new Date(timestamps[i] * 1000).toISOString().slice(0, 10),
+                  open: Number(q.open?.[i] ?? closeVal),
+                  high: Number(q.high?.[i] ?? closeVal),
+                  low: Number(q.low?.[i] ?? closeVal),
+                  close: Number(closeVal),
+                  volume: Number(q.volume?.[i] || 0),
+                },
               });
             }
           }
 
-          this.historyCache.set(cacheKey, { data: candles, cachedAt: Date.now() });
-          return candles;
+          // Sort chronologically ascending
+          candles.sort((a, b) => a.timestamp - b.timestamp);
+          const orderedCandles = candles.map((c) => c.candle);
+
+          if (orderedCandles.length > 0) {
+            this.historyCache.set(cacheKey, { data: orderedCandles, cachedAt: Date.now() });
+            return orderedCandles;
+          }
         }
       }
     } catch (err) {
       console.warn('Failed to fetch historical chart from Yahoo:', err);
     }
 
-    // Generate fallback historical daily candles (e.g. 250 daily bars)
-    const quote = await this.getQuote(symbol);
-    const currentPrice = quote?.price || 1000;
-    const fallbackCandles: HistoricalCandle[] = [];
-    let price = currentPrice * 0.85;
-
-    for (let i = 250; i >= 0; i--) {
-      const date = new Date(Date.now() - i * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-      const delta = (Math.random() - 0.48) * (price * 0.02);
-      price = Math.max(10, price + delta);
-      fallbackCandles.push({
-        date,
-        open: Math.round(price * 0.995 * 100) / 100,
-        high: Math.round(price * 1.01 * 100) / 100,
-        low: Math.round(price * 0.99 * 100) / 100,
-        close: Math.round(price * 100) / 100,
-        volume: Math.floor(Math.random() * 1000000) + 100000,
-      });
-    }
-
-    this.historyCache.set(cacheKey, { data: fallbackCandles, cachedAt: Date.now() });
-    return fallbackCandles;
+    // Do NOT generate random fake numbers. Return empty array on failure.
+    return [];
   }
 
+  /**
+   * Retrieves authentic NIFTY 50 Benchmark & Sector Indices data with calculated EMAs.
+   */
   public async getIndexData(): Promise<{ nifty: any; sectors: any[] }> {
-    // 1. Fetch Nifty Benchmark
-    const niftyQuotes = await this.getBatchQuotes(['^NSEI']);
-    const niftyQuote = niftyQuotes['^NSEI'] || {
-      price: 24850.5,
-      previousClose: 24700.0,
-      change: 150.5,
-      changePercent: 0.61,
-      timestamp: new Date().toISOString(),
-    };
+    const now = Date.now();
+    if (this.indexCache && now - this.indexCache.cachedAt < this.INDEX_TTL_MS) {
+      return this.indexCache.data;
+    }
 
-    // Calculate real historical EMAs for NIFTY
-    const niftyCandles = await this.getHistoricalPrices('^NSEI', '1y');
-    const niftyCloses = niftyCandles.map((c) => c.close);
-    const niftyEMAs = calculateAllEMAs(niftyCloses);
+    // 1. Fetch benchmark NIFTY 50 (^NSEI)
+    let niftyResult: any = null;
+    try {
+      const niftyChartUrl = 'https://query1.finance.yahoo.com/v8/finance/chart/%5ENSEI?interval=1d&range=1y';
+      const nRes = await fetch(niftyChartUrl, {
+        headers: {
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+          Accept: 'application/json',
+        },
+      });
 
-    const nifty = {
-      price: niftyQuote.price,
-      change: niftyQuote.change,
-      changePercent: niftyQuote.changePercent,
-      ema20: niftyEMAs.ema20 || Math.round(niftyQuote.price * 0.994),
-      ema50: niftyEMAs.ema50 || Math.round(niftyQuote.price * 0.985),
-      ema100: niftyEMAs.ema100 || Math.round(niftyQuote.price * 0.965),
-      ema200: niftyEMAs.ema200 || Math.round(niftyQuote.price * 0.94),
-      status:
-        niftyQuote.price >= (niftyEMAs.ema50 || niftyQuote.price)
-          ? 'BULLISH (Above 50 EMA)'
-          : 'BEARISH (Below 50 EMA)',
-      lastUpdated: new Date().toLocaleTimeString('en-IN'),
-    };
+      if (nRes.ok) {
+        const nJson: any = await nRes.json();
+        const result = nJson?.chart?.result?.[0];
+        const meta = result?.meta;
+        const timestamps: number[] = result?.timestamp || [];
+        const rawCloses: (number | null)[] = result?.indicators?.quote?.[0]?.close || [];
+
+        // Build valid, chronological close array
+        const validCandles: { timestamp: number; close: number }[] = [];
+        for (let i = 0; i < timestamps.length; i++) {
+          const c = rawCloses[i];
+          if (typeof c === 'number' && !isNaN(c) && c > 0) {
+            validCandles.push({ timestamp: timestamps[i], close: c });
+          }
+        }
+        validCandles.sort((a, b) => a.timestamp - b.timestamp);
+        const validCloses = validCandles.map((v) => v.close);
+
+        if (validCloses.length > 0 || meta?.regularMarketPrice) {
+          const latestValue = Number(
+            meta?.regularMarketPrice ??
+              (validCloses.length > 0 ? validCloses[validCloses.length - 1] : 0)
+          );
+
+          const previousClose = Number(
+            meta?.chartPreviousClose ??
+              meta?.previousClose ??
+              (validCloses.length >= 2 ? validCloses[validCloses.length - 2] : latestValue)
+          );
+
+          const change = latestValue && previousClose ? Math.round((latestValue - previousClose) * 100) / 100 : 0;
+          const changePercent =
+            previousClose && previousClose > 0
+              ? Math.round(((latestValue - previousClose) / previousClose) * 10000) / 100
+              : 0;
+
+          const ema20 = calculateRealEMA(validCloses, 20) ?? 0;
+          const ema50 = calculateRealEMA(validCloses, 50) ?? 0;
+          const ema200 = calculateRealEMA(validCloses, 200) ?? 0;
+
+          const isOpen = this.isNseMarketOpen(meta?.currentTradingPeriod?.regular);
+          const marketStatus = latestValue > 0 ? (isOpen ? 'OPEN' : 'CLOSED') : 'UNAVAILABLE';
+
+          const marketTime = meta?.regularMarketTime
+            ? new Date(meta.regularMarketTime * 1000)
+            : new Date();
+          const lastUpdated = marketTime.toLocaleTimeString('en-IN', {
+            hour: '2-digit',
+            minute: '2-digit',
+            timeZone: 'Asia/Kolkata',
+          });
+
+          niftyResult = {
+            symbol: '^NSEI',
+            name: 'NIFTY 50',
+            value: Math.round(latestValue * 100) / 100,
+            previousClose: Math.round(previousClose * 100) / 100,
+            change,
+            changePercent,
+            ema20,
+            ema50,
+            ema200,
+            lastUpdated,
+            marketStatus,
+            isDelayed: !isOpen,
+            unavailable: latestValue <= 0,
+          };
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to query live NIFTY 50 benchmark:', err);
+    }
+
+    if (!niftyResult) {
+      niftyResult = {
+        symbol: '^NSEI',
+        name: 'NIFTY 50',
+        value: 0,
+        previousClose: 0,
+        change: 0,
+        changePercent: 0,
+        ema20: 0,
+        ema50: 0,
+        ema200: 0,
+        lastUpdated: 'Unavailable',
+        marketStatus: 'UNAVAILABLE',
+        isDelayed: true,
+        unavailable: true,
+      };
+    }
 
     // 2. Fetch Sector Indices
-    const sectorSymbols = [
-      { name: 'Nifty IT', ticker: '^CNXIT', sector: 'IT' },
-      { name: 'Nifty Bank', ticker: '^NSEBANK', sector: 'Banking' },
-      { name: 'Nifty Auto', ticker: '^CNXAUTO', sector: 'Auto' },
-      { name: 'Nifty FMCG', ticker: '^CNXFMCG', sector: 'FMCG' },
-      { name: 'Nifty Pharma', ticker: '^CNXPHARMA', sector: 'Pharma' },
-      { name: 'Nifty Metal', ticker: '^CNXMETAL', sector: 'Metals' },
-      { name: 'Nifty Energy', ticker: '^CNXENERGY', sector: 'Energy' },
+    const sectorConfigs = [
+      { name: 'Nifty 50', ticker: '^NSEI', category: 'Benchmark' },
+      { name: 'Bank Nifty', ticker: '^NSEBANK', category: 'Banking' },
+      { name: 'Nifty IT', ticker: '^CNXIT', category: 'IT' },
+      { name: 'Nifty Auto', ticker: '^CNXAUTO', category: 'Auto' },
+      { name: 'Nifty FMCG', ticker: '^CNXFMCG', category: 'FMCG' },
+      { name: 'Nifty Metal', ticker: '^CNXMETAL', category: 'Metals' },
+      { name: 'Nifty Pharma', ticker: '^CNXPHARMA', category: 'Pharma' },
+      { name: 'Nifty PSU Bank', ticker: '^CNXPSUBANK', category: 'PSU Bank' },
+      { name: 'Nifty Fin Service', ticker: 'NIFTY_FIN_SERVICE.NS', category: 'Financial Services' },
+      { name: 'Nifty Healthcare', ticker: '^CNXHEALTH', category: 'Healthcare' },
+      { name: 'Nifty Oil & Gas', ticker: '^CNXOILGAS', category: 'Energy' },
+      { name: 'Nifty Media', ticker: '^CNXMEDIA', category: 'Media' },
+      { name: 'Nifty Realty', ticker: '^CNXREALTY', category: 'Realty' },
     ];
 
-    const sectorQuotes = await this.getBatchQuotes(sectorSymbols.map((s) => s.ticker));
-    const sectors = sectorSymbols.map((sec) => {
-      const q = sectorQuotes[sec.ticker] || {
-        price: 35000,
-        previousClose: 34800,
-        change: 200,
-        changePercent: 0.57,
-      };
-      const ema50 = Math.round(q.price * 0.985);
-      const isAbove50EMA = q.price >= ema50;
+    const sectorPromises = sectorConfigs.map(async (sec) => {
+      try {
+        const chartUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(
+          sec.ticker
+        )}?interval=1d&range=6mo`;
+        const res = await fetch(chartUrl, {
+          headers: {
+            'User-Agent':
+              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+          },
+        });
+
+        if (res.ok) {
+          const json: any = await res.json();
+          const result = json?.chart?.result?.[0];
+          const meta = result?.meta;
+          const timestamps: number[] = result?.timestamp || [];
+          const rawCloses: (number | null)[] = result?.indicators?.quote?.[0]?.close || [];
+
+          const validCandles: { timestamp: number; close: number }[] = [];
+          for (let i = 0; i < timestamps.length; i++) {
+            const c = rawCloses[i];
+            if (typeof c === 'number' && !isNaN(c) && c > 0) {
+              validCandles.push({ timestamp: timestamps[i], close: c });
+            }
+          }
+          validCandles.sort((a, b) => a.timestamp - b.timestamp);
+          const validCloses = validCandles.map((v) => v.close);
+
+          const latestValue = Number(
+            meta?.regularMarketPrice ??
+              (validCloses.length > 0 ? validCloses[validCloses.length - 1] : 0)
+          );
+
+          const previousClose = Number(
+            meta?.chartPreviousClose ??
+              meta?.previousClose ??
+              (validCloses.length >= 2 ? validCloses[validCloses.length - 2] : latestValue)
+          );
+
+          if (latestValue > 0) {
+            const change = latestValue && previousClose ? Math.round((latestValue - previousClose) * 100) / 100 : 0;
+            const changePercent =
+              previousClose && previousClose > 0
+                ? Math.round(((latestValue - previousClose) / previousClose) * 10000) / 100
+                : 0;
+
+            const ema50 = calculateRealEMA(validCloses, 50) ?? 0;
+
+            return {
+              name: sec.name,
+              ticker: sec.ticker,
+              category: sec.category,
+              value: Math.round(latestValue * 100) / 100,
+              previousClose: Math.round(previousClose * 100) / 100,
+              change,
+              changePercent,
+              ema50,
+              unavailable: false,
+            };
+          }
+        }
+      } catch (err) {
+        console.warn(`Error fetching sector index ${sec.ticker}:`, err);
+      }
 
       return {
-        id: sec.sector.toLowerCase(),
         name: sec.name,
         ticker: sec.ticker,
-        sector: sec.sector,
-        currentValue: q.price,
-        dayChange: q.change,
-        dayChangePercent: q.changePercent,
-        ema50,
-        isAbove50EMA,
-        status: isAbove50EMA ? 'Outperforming' : 'Lagging',
+        category: sec.category,
+        value: 0,
+        previousClose: 0,
+        change: 0,
+        changePercent: 0,
+        ema50: 0,
+        unavailable: true,
       };
     });
 
-    return { nifty, sectors };
+    const sectors = await Promise.all(sectorPromises);
+    const finalData = { nifty: niftyResult, sectors };
+
+    if (!niftyResult.unavailable) {
+      this.indexCache = { data: finalData, cachedAt: Date.now() };
+    }
+
+    return finalData;
   }
 
   public async searchInstruments(query: string): Promise<InstrumentSearchResult[]> {
-    const q = query.trim().toUpperCase();
-    if (!q || q.length < 2) return [];
+    if (!query || query.trim().length === 0) return [];
 
     try {
-      const url = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(q)}&quotesCount=10&newsCount=0`;
+      const url = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(
+        query
+      )}&quotesCount=10&newsCount=0`;
       const res = await fetch(url, {
         headers: {
-          'User-Agent': 'Mozilla/5.0 Chrome/120.0.0.0 Safari/537.36',
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
         },
       });
 
       if (res.ok) {
-        const data = await res.json();
-        const quotes = data.quotes || [];
-        return quotes
-          .filter((item: any) => item.exchange === 'NSI' || item.exchange === 'BSE' || item.symbol.includes('.NS') || item.symbol.includes('.BO'))
-          .map((item: any) => ({
-            symbol: item.symbol,
-            name: item.shortname || item.longname || item.symbol,
-            exchange: item.exchange === 'NSI' || item.symbol.includes('.NS') ? 'NSE' : 'BSE',
-            type: item.quoteType || 'STOCK',
-          }));
+        const json = await res.json();
+        const quotes = json?.quotes || [];
+        return quotes.map((q: any) => ({
+          symbol: q.symbol,
+          name: q.shortname || q.longname || q.symbol,
+          exchange: q.exchange || 'NSE',
+          sector: q.sector,
+          type: q.quoteType || 'EQUITY',
+        }));
       }
-    } catch {
-      // ignore
+    } catch (err) {
+      console.warn('Search query error:', err);
     }
 
     return [];

@@ -1,10 +1,11 @@
 import { Router } from 'express';
 import { dbManager, DbWatchlist, DbWatchlistItem } from '../db/dbManager';
-import { authenticateToken, AuthenticatedRequest } from '../middleware/auth';
+import { authenticateToken, requireAuth, AuthenticatedRequest } from '../middleware/auth';
 import { marketDataService } from '../services/marketDataService';
 
 export const watchlistRouter = Router();
 watchlistRouter.use(authenticateToken);
+watchlistRouter.use(requireAuth);
 
 // GET /api/watchlists - List watchlists for user
 watchlistRouter.get('/', async (req: AuthenticatedRequest, res) => {

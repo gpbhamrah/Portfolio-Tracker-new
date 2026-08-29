@@ -214,6 +214,39 @@ class DatabaseManager {
 
   // --- USER REPOSITORY METHODS ---
 
+  public ensureUserExists(data: { id: string; email: string; name?: string; role?: 'USER' | 'ADMIN' }): DbUser {
+    let existing = this.users.get(data.id);
+    if (!existing) {
+      existing = {
+        id: data.id,
+        email: data.email,
+        name: data.name || data.email.split('@')[0] || 'Investor',
+        isActive: true,
+        emailVerified: true,
+        role: data.role || 'USER',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      this.users.set(data.id, existing);
+
+      if (!this.userSettings.has(data.id)) {
+        this.userSettings.set(data.id, {
+          id: `settings-${data.id}`,
+          userId: data.id,
+          currency: 'INR',
+          timezone: 'Asia/Kolkata',
+          theme: 'system',
+          emailNotifications: true,
+          telegramNotifications: false,
+          whatsappNotifications: false,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
+      }
+    }
+    return existing;
+  }
+
   public async findUserById(id: string): Promise<DbUser | null> {
     return this.users.get(id) || null;
   }

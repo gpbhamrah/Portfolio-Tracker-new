@@ -77,24 +77,22 @@ export async function supabaseSessionMiddleware(
         email: user.email || '',
         role: (user.user_metadata?.role as 'USER' | 'ADMIN') || 'USER',
       };
-    } else {
-      // Fallback demo user for smooth local preview & testing
-      const defaultUser = Array.from(dbManager.users.values())[0] || {
-        id: 'usr-demo-investor',
-        email: 'demo@investingjournal.com',
-        role: 'ADMIN' as const,
-      };
 
-      req.user = {
-        userId: defaultUser.id,
-        email: defaultUser.email,
-        role: defaultUser.role,
-      };
+      // Ensure user entry exists in DB manager for relation integrity
+      dbManager.ensureUserExists({
+        id: user.id,
+        email: user.email || '',
+        name: user.user_metadata?.name || user.user_metadata?.full_name || user.email?.split('@')[0] || 'Investor',
+        role: (user.user_metadata?.role as 'USER' | 'ADMIN') || 'USER',
+      });
+    } else {
+      req.user = undefined;
     }
 
     next();
   } catch (err) {
     console.error('Supabase session refresh middleware error:', err);
+    req.user = undefined;
     next();
   }
 }

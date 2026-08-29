@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { UserPlus, Mail, Lock, AlertCircle, CheckCircle2 } from 'lucide-react';
-// @ts-ignore
-import { supabase } from '../supabaseClient';
+import { supabase, isSupabaseConfigured } from '../lib/supabase/client';
 
 interface SignUpProps {
   onToggleSignIn?: () => void;
@@ -14,16 +13,37 @@ export const SignUp: React.FC<SignUpProps> = ({ onToggleSignIn, onSuccess }) => 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [requiresConfirmation, setRequiresConfirmation] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setSuccessMessage(null);
+    setRequiresConfirmation(false);
+
+    const cleanEmail = email.trim();
+    if (!cleanEmail || !cleanEmail.includes('@')) {
+      setError('Please enter a valid email address.');
+      return;
+    }
+
+    if (password.length < 6) {
+      setError('Password must be at least 6 characters long.');
+      return;
+    }
+
+    if (!isSupabaseConfigured()) {
+      setError(
+        'Supabase authentication is not configured. Please ensure VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY are set in your environment.'
+      );
+      return;
+    }
+
     setLoading(true);
 
     try {
       const { data, error: signUpError } = await supabase.auth.signUp({
-        email,
+        email: cleanEmail,
         password,
       });
 
@@ -34,22 +54,22 @@ export const SignUp: React.FC<SignUpProps> = ({ onToggleSignIn, onSuccess }) => 
       }
 
       if (data?.session) {
-        if (onSuccess) {
-          onSuccess();
-        }
-        window.location.href = '/';
-      } else if (data?.user) {
-        // If email confirmation is enabled or user is created
-        setSuccessMessage('Registration successful! Redirecting to Home...');
+        // Automatic session established (email confirmation disabled in Supabase)
+        setSuccessMessage('Account created and signed in successfully!');
         setTimeout(() => {
           if (onSuccess) {
             onSuccess();
           }
-          window.location.href = '/';
-        }, 1200);
+        }, 800);
+      } else if (data?.user) {
+        // Email confirmation is required by Supabase project settings
+        setRequiresConfirmation(true);
+        setSuccessMessage(
+          'Registration initiated! A verification link has been sent to your email address. Please check your inbox and confirm your account before signing in.'
+        );
       }
     } catch (err: any) {
-      setError(err?.message || 'An unexpected error occurred during sign up.');
+      setError(err?.message || 'An unexpected error occurred during account creation.');
     } finally {
       setLoading(false);
     }
@@ -98,7 +118,7 @@ export const SignUp: React.FC<SignUpProps> = ({ onToggleSignIn, onSuccess }) => 
         <button
           id="signup-submit-btn"
           type="submit"
-          disabled={loading}
+          disabled={loading || requiresConfirmation}
           className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs uppercase tracking-wider shadow-sm transition disabled:opacity-50 cursor-pointer"
         >
           <UserPlus className="w-4 h-4" />
@@ -113,9 +133,20 @@ export const SignUp: React.FC<SignUpProps> = ({ onToggleSignIn, onSuccess }) => 
         )}
 
         {successMessage && (
-          <div className="flex items-center gap-2 p-3 text-xs text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/50 rounded-md font-mono">
-            <CheckCircle2 className="w-4 h-4 shrink-0" />
-            <span>{successMessage}</span>
+          <div className="flex items-start gap-2 p-3 text-xs text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900/60 rounded-md font-mono">
+            <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-emerald-600 dark:text-emerald-400" />
+            <div className="space-y-1.5">
+              <p>{successMessage}</p>
+              {requiresConfirmation && onToggleSignIn && (
+                <button
+                  type="button"
+                  onClick={onToggleSignIn}
+                  className="inline-block mt-1 font-bold text-emerald-800 dark:text-emerald-200 underline cursor-pointer"
+                >
+                  Go to Sign In &rarr;
+                </button>
+              )}
+            </div>
           </div>
         )}
       </form>

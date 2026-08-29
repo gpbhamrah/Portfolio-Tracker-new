@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { dbManager, DbPortfolio, DbTransaction } from '../db/dbManager';
-import { authenticateToken, verifyPortfolioOwnership, AuthenticatedRequest } from '../middleware/auth';
+import { authenticateToken, requireAuth, verifyPortfolioOwnership, AuthenticatedRequest } from '../middleware/auth';
 import { validateRequest, TransactionSchema } from '../middleware/validation';
 import { portfolioEngine } from '../services/portfolioEngine';
 import { marketDataService } from '../services/marketDataService';
@@ -9,6 +9,7 @@ export const portfolioRouter = Router();
 
 // Apply auth to all portfolio routes
 portfolioRouter.use(authenticateToken);
+portfolioRouter.use(requireAuth);
 
 // GET /api/portfolios - List all portfolios for the authenticated user
 portfolioRouter.get('/', async (req: AuthenticatedRequest, res) => {

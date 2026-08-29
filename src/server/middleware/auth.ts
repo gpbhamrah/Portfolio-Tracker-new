@@ -11,7 +11,7 @@ export interface AuthTokenPayload {
 export interface AuthenticatedRequest extends SupabaseAuthRequest {}
 
 /**
- * Authentication Boundary Middleware (Supabase Auth Session + Local Fallback)
+ * Authentication Boundary Middleware
  * Automatically verifies & refreshes sessions via Supabase.
  */
 export async function authenticateToken(
@@ -20,6 +20,24 @@ export async function authenticateToken(
   next: NextFunction
 ): Promise<void> {
   return supabaseSessionMiddleware(req, res, next);
+}
+
+/**
+ * Enforces authenticated user access
+ */
+export function requireAuth(
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): void {
+  if (!req.user || !req.user.userId) {
+    res.status(401).json({
+      success: false,
+      error: { code: 'UNAUTHORIZED', message: 'Authentication required. Please sign in.' },
+    });
+    return;
+  }
+  next();
 }
 
 /**

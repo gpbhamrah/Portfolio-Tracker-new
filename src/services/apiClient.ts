@@ -119,15 +119,10 @@ class ApiClient {
       };
     }
     return {
-      success: true,
-      data: {
-        user: {
-          id: 'usr-demo-investor',
-          email: 'demo@investingjournal.com',
-          name: 'Demo Investor',
-          role: 'ADMIN',
-          emailVerified: true,
-        },
+      success: false,
+      error: res.error || {
+        code: 'UNAUTHORIZED',
+        message: 'No active authenticated session',
       },
     };
   }

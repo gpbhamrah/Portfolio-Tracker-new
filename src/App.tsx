@@ -5,6 +5,7 @@ import { INITIAL_SECTORS, INITIAL_NIFTY } from './data/defaultData';
 import { fetchBatchQuotes, fetchIndicesData } from './services/marketService';
 import { apiClient, AuthUser } from './services/apiClient';
 import { supabase } from './lib/supabase/client';
+import { supabaseDataService } from './services/supabaseDataService';
 import { Header } from './components/Header';
 import { LandingHero } from './components/LandingHero';
 import { PortfolioMeta } from './components/PortfolioSwitcher';
@@ -20,7 +21,7 @@ import { AdminPanelModal } from './components/AdminPanelModal';
 import { AlertsModal } from './components/AlertsModal';
 import { BrokerImportModal } from './components/BrokerImportModal';
 import { UserSettingsModal } from './components/UserSettingsModal';
-import { Briefcase, Eye, Activity, PieChart, CheckCircle2 } from 'lucide-react';
+import { Briefcase, Eye, Activity, PieChart, CheckCircle2, RefreshCw } from 'lucide-react';
 
 export default function App() {
   // Theme state
@@ -32,6 +33,8 @@ export default function App() {
 
   // User Auth State
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
+  const [authInitialized, setAuthInitialized] = useState<boolean>(false);
+  const [isPortfolioLoading, setIsPortfolioLoading] = useState<boolean>(false);
   const [portfolios, setPortfolios] = useState<PortfolioMeta[]>([]);
   const [activePortfolioId, setActivePortfolioId] = useState<string>('');
 
@@ -81,6 +84,14 @@ export default function App() {
 
   const loadUserWatchlist = async () => {
     try {
+      // First attempt direct Supabase database query
+      const sbRes = await supabaseDataService.getWatchlist();
+      if (sbRes.success && sbRes.data) {
+        setWatchlist(sbRes.data);
+        return;
+      }
+
+      // Fallback to API Client
       const res = await apiClient.getWatchlist();
       if (res.success && res.data?.items) {
         const dbWatchlist: WatchlistItem[] = res.data.items.map((w: any) => ({
@@ -110,6 +121,14 @@ export default function App() {
   const loadDatabasePortfolio = async (portfolioId: string) => {
     if (!portfolioId) return;
     try {
+      // First attempt direct Supabase database query
+      const sbRes = await supabaseDataService.getHoldings(portfolioId);
+      if (sbRes.success && sbRes.data) {
+        setHoldings(sbRes.data);
+        return;
+      }
+
+      // Fallback to API client
       const res = await apiClient.getPortfolioSummary(portfolioId);
       if (res.success && res.data) {
         const dbHoldings: Holding[] = (res.data.holdings || []).map((h: any) => ({
@@ -140,6 +159,17 @@ export default function App() {
 
   const loadUserPortfolios = async (userId: string) => {
     try {
+      // First attempt direct Supabase database query
+      const sbRes = await supabaseDataService.getPortfolios();
+      if (sbRes.success && sbRes.data && sbRes.data.length > 0) {
+        setPortfolios(sbRes.data);
+        const defaultPort = sbRes.data.find((p: any) => p.isDefault) || sbRes.data[0];
+        setActivePortfolioId(defaultPort.id);
+        await loadDatabasePortfolio(defaultPort.id);
+        return;
+      }
+
+      // Fallback to API client
       const res = await apiClient.getPortfolios();
       if (res.success && res.data && res.data.length > 0) {
         setPortfolios(res.data);
@@ -149,52 +179,135 @@ export default function App() {
       } else {
         setPortfolios([]);
         setHoldings([]);
+        setActivePortfolioId('');
       }
     } catch (err) {
       console.error('Failed to load user portfolios', err);
       setPortfolios([]);
       setHoldings([]);
+      setActivePortfolioId('');
     }
   };
 
-  // Check login state and listen for Supabase auth events
-  useEffect(() => {
-    const checkAuth = async () => {
-      const res = await apiClient.getMe();
-      if (res.success && res.data?.user) {
-        setCurrentUser(res.data.user);
-        await loadUserPortfolios(res.data.user.id);
-        await loadUserWatchlist();
-      } else {
-        if (apiClient.getToken()) {
-          apiClient.setToken(null);
+  const buildAuthUserFromSupabase = (user: any): AuthUser => {
+    const meta = user.user_metadata || {};
+    const name =
+      meta.full_name ||
+      meta.name ||
+      (user.email ? user.email.split('@')[0] : 'Investor');
+    const role =
+      meta.role === 'ADMIN' || user.email === 'gpbhamrah@gmail.com'
+        ? 'ADMIN'
+        : 'USER';
+    return {
+      id: user.id,
+      email: user.email || '',
+      name,
+      role,
+      emailVerified: Boolean(user.email_confirmed_at),
+    };
+  };
+
+  // Reusable function to initialize an authenticated user
+  const initializeAuthenticatedUser = async (user: any, session?: any) => {
+    if (!user) return;
+    setIsPortfolioLoading(true);
+
+    if (session?.access_token) {
+      apiClient.setToken(session.access_token);
+    }
+    const authUser = buildAuthUserFromSupabase(user);
+    setCurrentUser(authUser);
+    setActiveTab('holdings');
+
+    try {
+      await Promise.all([
+        loadUserPortfolios(user.id),
+        loadUserWatchlist(),
+      ]);
+    } catch (err) {
+      console.warn('Error loading user data on auth init:', err);
+    } finally {
+      setIsPortfolioLoading(false);
+    }
+
+    // Optional background profile enrichment
+    try {
+      apiClient.getMe().then((res) => {
+        if (res.success && res.data?.user) {
+          setCurrentUser((prev) => (prev ? { ...prev, ...res.data!.user } : prev));
         }
+      }).catch(() => {});
+    } catch {}
+  };
+
+  // Dedicated central auth success handler
+  const handleAuthSuccess = async (user: any, session?: any) => {
+    setIsAuthModalOpen(false);
+    await initializeAuthenticatedUser(user, session);
+    const displayName =
+      user?.user_metadata?.full_name ||
+      user?.user_metadata?.name ||
+      (user?.email ? user.email.split('@')[0] : 'Investor');
+    showToast(`Welcome back, ${displayName}!`);
+  };
+
+  // Check login state on mount with supabase.auth.getSession() and listen for Supabase auth events
+  useEffect(() => {
+    let isMounted = true;
+
+    const initAuth = async () => {
+      try {
+        const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+        if (!isMounted) return;
+
+        if (sessionError || !sessionData?.session?.user) {
+          apiClient.setToken(null);
+          setCurrentUser(null);
+          setHoldings([]);
+          setWatchlist([]);
+          setPortfolios([]);
+          setActivePortfolioId('');
+          setAuthInitialized(true);
+          return;
+        }
+
+        // Active session exists - initialize authenticated state
+        await initializeAuthenticatedUser(sessionData.session.user, sessionData.session);
+      } catch (err) {
+        console.error('Session authentication error:', err);
+        apiClient.setToken(null);
         setCurrentUser(null);
         setHoldings([]);
         setWatchlist([]);
         setPortfolios([]);
+        setActivePortfolioId('');
+      } finally {
+        if (isMounted) {
+          setAuthInitialized(true);
+        }
       }
     };
 
-    checkAuth();
+    initAuth();
 
     // Listen to Supabase auth state changes
     const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (!isMounted) return;
+
       if (event === 'PASSWORD_RECOVERY') {
         setAuthModalMode('reset');
         setIsAuthModalOpen(true);
       } else if (event === 'SIGNED_IN' && session?.user) {
-        const res = await apiClient.getMe();
-        if (res.success && res.data?.user) {
-          setCurrentUser(res.data.user);
-          await loadUserPortfolios(res.data.user.id);
-          await loadUserWatchlist();
-        }
-      } else if (event === 'SIGNED_OUT') {
+        await initializeAuthenticatedUser(session.user, session);
+      } else if (event === 'SIGNED_OUT' || !session) {
+        apiClient.setToken(null);
         setCurrentUser(null);
         setPortfolios([]);
+        setActivePortfolioId('');
         setHoldings([]);
         setWatchlist([]);
+        setIsPortfolioLoading(false);
       }
     });
 
@@ -207,15 +320,39 @@ export default function App() {
     ) {
       setAuthModalMode('reset');
       setIsAuthModalOpen(true);
+    } else if (
+      typeof window !== 'undefined' &&
+      (window.location.pathname === '/login' || window.location.pathname === '/signin')
+    ) {
+      setAuthModalMode('signin');
+      setIsAuthModalOpen(true);
+    } else if (
+      typeof window !== 'undefined' &&
+      (window.location.pathname === '/signup' || window.location.pathname === '/register')
+    ) {
+      setAuthModalMode('signup');
+      setIsAuthModalOpen(true);
     }
 
     return () => {
+      isMounted = false;
       authListener?.subscription?.unsubscribe();
     };
   }, []);
 
   const handleCreatePortfolio = async (name: string, description?: string) => {
     try {
+      // First attempt Supabase
+      const sbRes = await supabaseDataService.createPortfolio(name, description);
+      if (sbRes.success && sbRes.data) {
+        setPortfolios((prev) => [...prev, sbRes.data]);
+        setActivePortfolioId(sbRes.data.id);
+        setHoldings([]);
+        showToast(`Created portfolio "${name}"`);
+        return;
+      }
+
+      // Fallback
       const res = await apiClient.createPortfolio(name, description);
       if (res.success && res.data) {
         setPortfolios((prev) => [...prev, res.data]);
@@ -361,21 +498,29 @@ export default function App() {
       return [newHolding, ...prev];
     });
 
-    if (currentUser && activePortfolioId) {
+    if (currentUser) {
       try {
-        await apiClient.saveHolding(activePortfolioId, {
-          id: newHolding.id,
-          name: newHolding.name,
-          ticker: newHolding.ticker,
-          sector: newHolding.sector,
-          qty: newHolding.qty,
-          buyPrice: newHolding.buyPrice,
-          buyDate: newHolding.buyDate,
-          cmp: newHolding.cmp,
-          sellPrice: newHolding.sellPrice,
-          stopLoss: newHolding.stopLoss,
-          notes: newHolding.notes,
-        });
+        // Direct Supabase upsert/insert
+        const sbRes = await supabaseDataService.saveHolding(newHolding, activePortfolioId || undefined);
+        if (sbRes.success && sbRes.data) {
+          setHoldings((prev) =>
+            prev.map((h) => (h.id === newHolding.id ? { ...h, id: sbRes.data!.id } : h))
+          );
+        } else if (activePortfolioId) {
+          await apiClient.saveHolding(activePortfolioId, {
+            id: newHolding.id,
+            name: newHolding.name,
+            ticker: newHolding.ticker,
+            sector: newHolding.sector,
+            qty: newHolding.qty,
+            buyPrice: newHolding.buyPrice,
+            buyDate: newHolding.buyDate,
+            cmp: newHolding.cmp,
+            sellPrice: newHolding.sellPrice,
+            stopLoss: newHolding.stopLoss,
+            notes: newHolding.notes,
+          });
+        }
       } catch (err) {
         console.warn('Failed to sync holding to database:', err);
       }
@@ -421,17 +566,25 @@ export default function App() {
 
     if (currentUser) {
       try {
-        await apiClient.saveWatchlistItem({
-          id: newItem.id,
-          name: newItem.name,
-          ticker: newItem.ticker,
-          sector: newItem.sector,
-          targetEntryPrice: newItem.targetEntryPrice,
-          cmp: newItem.cmp,
-          targetSellPrice: newItem.targetSellPrice,
-          stopLoss: newItem.stopLoss,
-          notes: newItem.notes,
-        });
+        // Direct Supabase upsert/insert
+        const sbRes = await supabaseDataService.saveWatchlistItem(newItem);
+        if (sbRes.success && sbRes.data) {
+          setWatchlist((prev) =>
+            prev.map((w) => (w.id === newItem.id ? { ...w, id: sbRes.data!.id } : w))
+          );
+        } else {
+          await apiClient.saveWatchlistItem({
+            id: newItem.id,
+            name: newItem.name,
+            ticker: newItem.ticker,
+            sector: newItem.sector,
+            targetEntryPrice: newItem.targetEntryPrice,
+            cmp: newItem.cmp,
+            targetSellPrice: newItem.targetSellPrice,
+            stopLoss: newItem.stopLoss,
+            notes: newItem.notes,
+          });
+        }
       } catch (err) {
         console.warn('Failed to sync watchlist item to database:', err);
       }
@@ -463,21 +616,42 @@ export default function App() {
   };
 
   // Quick Inline Date Update handler
-  const handleUpdateBuyDate = (id: string, newDate: string) => {
+  const handleUpdateBuyDate = async (id: string, newDate: string) => {
     setHoldings((prev) =>
       prev.map((h) => (h.id === id ? { ...h, buyDate: newDate, updatedAt: new Date().toISOString() } : h))
     );
+    if (currentUser) {
+      try {
+        await supabaseDataService.updateBuyDate(id, newDate);
+      } catch (e) {
+        console.warn('Failed to update buy date in Supabase:', e);
+      }
+    }
     showToast('Purchase date updated successfully');
   };
 
   // Delete handlers
-  const handleDeleteHolding = (id: string) => {
+  const handleDeleteHolding = async (id: string) => {
     setHoldings((prev) => prev.filter((h) => h.id !== id));
+    if (currentUser) {
+      try {
+        await supabaseDataService.deleteHolding(id);
+      } catch (e) {
+        console.warn('Failed to delete holding in Supabase:', e);
+      }
+    }
     showToast('Holding deleted', 'info');
   };
 
-  const handleDeleteWatchlist = (id: string) => {
+  const handleDeleteWatchlist = async (id: string) => {
     setWatchlist((prev) => prev.filter((w) => w.id !== id));
+    if (currentUser) {
+      try {
+        await supabaseDataService.deleteWatchlistItem(id);
+      } catch (e) {
+        console.warn('Failed to delete watchlist item in Supabase:', e);
+      }
+    }
     showToast('Watchlist item removed', 'info');
   };
 
@@ -538,6 +712,30 @@ export default function App() {
     setIsAuthModalOpen(true);
   };
 
+  // Initial Fullscreen App Loading Screen while Supabase verifies session
+  if (!authInitialized) {
+    return (
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col items-center justify-center p-4">
+        <div className="flex flex-col items-center space-y-4 text-center">
+          <div className="w-12 h-12 bg-indigo-600 rounded-lg flex items-center justify-center font-bold text-white text-xl font-mono shadow-lg animate-pulse">
+            P
+          </div>
+          <div className="space-y-1">
+            <h2 className="text-base font-bold text-slate-900 dark:text-white font-mono tracking-wider">
+              PORTFOLIO<span className="text-indigo-600 dark:text-indigo-400">.ENGINE</span>
+            </h2>
+            <p className="text-xs text-slate-500 dark:text-slate-400 font-mono">
+              Verifying session & loading portfolio...
+            </p>
+          </div>
+          <div className="w-48 h-1 bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden">
+            <div className="w-full h-full bg-indigo-600 animate-pulse"></div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-200 font-sans antialiased selection:bg-indigo-500 selection:text-white transition-colors duration-200">
       {/* Toast Notification */}
@@ -585,6 +783,16 @@ export default function App() {
           /* AUTHENTICATED USER DASHBOARD                                              */
           /* ========================================================================= */
           <>
+            {/* Loading Portfolio Indicator */}
+            {isPortfolioLoading && (
+              <div className="flex items-center justify-between p-3 bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-900/60 rounded text-xs font-mono text-indigo-700 dark:text-indigo-300 animate-pulse">
+                <div className="flex items-center gap-2">
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin text-indigo-600 dark:text-indigo-400" />
+                  <span>Loading your portfolio data from database...</span>
+                </div>
+              </div>
+            )}
+
             {/* Benchmark Bar (Nifty 50 + EMAs) */}
             <BenchmarkBar nifty={nifty} />
 
@@ -746,15 +954,7 @@ export default function App() {
         isOpen={isAuthModalOpen}
         initialMode={authModalMode}
         onClose={() => setIsAuthModalOpen(false)}
-        onSuccess={async () => {
-          const res = await apiClient.getMe();
-          if (res.success && res.data?.user) {
-            setCurrentUser(res.data.user);
-            await loadUserPortfolios(res.data.user.id);
-            await loadUserWatchlist();
-            showToast(`Welcome, ${res.data.user.name || res.data.user.email}!`);
-          }
-        }}
+        onSuccess={handleAuthSuccess}
       />
 
       {/* Platform Admin Console Modal */}

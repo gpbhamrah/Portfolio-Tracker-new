@@ -1,26 +1,29 @@
 import React, { useState, useEffect } from 'react';
 import { X, ShieldCheck } from 'lucide-react';
+import type { User, Session } from '@supabase/supabase-js';
 import { SignIn } from './SignIn';
 import { SignUp } from './SignUp';
 import { ForgotPassword } from './ForgotPassword';
 import { ResetPassword } from './ResetPassword';
-import { AuthUser } from '../services/apiClient';
 
 export type AuthMode = 'signin' | 'signup' | 'forgot' | 'reset';
 
 interface AuthModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSuccess?: (user?: AuthUser) => void;
+  onSuccess?: (user: User, session: Session) => void;
   initialMode?: AuthMode;
 }
 
 export const AuthModal: React.FC<AuthModalProps> = ({
   isOpen,
   onClose,
+  onSuccess,
   initialMode = 'signin',
 }) => {
   const [mode, setMode] = useState<AuthMode>(initialMode);
+  const [prefilledEmail, setPrefilledEmail] = useState('');
+  const [signInSuccessNotice, setSignInSuccessNotice] = useState<string | null>(null);
 
   useEffect(() => {
     if (isOpen) {
@@ -29,6 +32,21 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   }, [isOpen, initialMode]);
 
   if (!isOpen) return null;
+
+  const handleSwitchToSignIn = (email?: string, notice?: string) => {
+    if (email) {
+      setPrefilledEmail(email);
+    }
+    if (notice) {
+      setSignInSuccessNotice(notice);
+    }
+    setMode('signin');
+  };
+
+  const handleSwitchToSignUp = () => {
+    setSignInSuccessNotice(null);
+    setMode('signup');
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs">
@@ -65,7 +83,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           <div className="flex border-b border-slate-200 dark:border-slate-800 bg-slate-100/60 dark:bg-slate-950/60 p-1">
             <button
               type="button"
-              onClick={() => setMode('signin')}
+              onClick={() => handleSwitchToSignIn()}
               className={`flex-1 py-1.5 text-xs font-mono font-bold rounded transition cursor-pointer ${
                 mode === 'signin'
                   ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-xs'
@@ -76,7 +94,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             </button>
             <button
               type="button"
-              onClick={() => setMode('signup')}
+              onClick={handleSwitchToSignUp}
               className={`flex-1 py-1.5 text-xs font-mono font-bold rounded transition cursor-pointer ${
                 mode === 'signup'
                   ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-xs'
@@ -92,16 +110,28 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         <div className="p-6">
           {mode === 'signin' && (
             <SignIn
-              onToggleSignUp={() => setMode('signup')}
+              initialEmail={prefilledEmail}
+              successMessage={signInSuccessNotice}
+              onToggleSignUp={handleSwitchToSignUp}
               onForgotPassword={() => setMode('forgot')}
-              onSuccess={onClose}
+              onSuccess={(user, session) => {
+                if (onSuccess) {
+                  onSuccess(user, session);
+                }
+                onClose();
+              }}
             />
           )}
 
           {mode === 'signup' && (
             <SignUp
-              onToggleSignIn={() => setMode('signin')}
-              onSuccess={onClose}
+              onToggleSignIn={handleSwitchToSignIn}
+              onSuccess={(createdEmail) => {
+                handleSwitchToSignIn(
+                  createdEmail,
+                  'Your account has been created. Please check your email and verify your address before logging in.'
+                );
+              }}
             />
           )}
 

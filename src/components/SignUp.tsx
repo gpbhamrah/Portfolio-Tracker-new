@@ -3,8 +3,8 @@ import { UserPlus, User, Mail, Lock, Eye, EyeOff, AlertCircle, CheckCircle2 } fr
 import { supabase, isSupabaseConfigured } from '../lib/supabase/client';
 
 interface SignUpProps {
-  onToggleSignIn?: () => void;
-  onSuccess?: () => void;
+  onToggleSignIn?: (email?: string, successMsg?: string) => void;
+  onSuccess?: (email?: string) => void;
 }
 
 export const SignUp: React.FC<SignUpProps> = ({ onToggleSignIn, onSuccess }) => {
@@ -17,13 +17,11 @@ export const SignUp: React.FC<SignUpProps> = ({ onToggleSignIn, onSuccess }) => 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
-  const [requiresConfirmation, setRequiresConfirmation] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setSuccessMessage(null);
-    setRequiresConfirmation(false);
 
     const cleanName = fullName.trim();
     if (!cleanName) {
@@ -79,18 +77,18 @@ export const SignUp: React.FC<SignUpProps> = ({ onToggleSignIn, onSuccess }) => 
         return;
       }
 
+      // Do NOT auto-login: if a session was created automatically, sign it out
       if (data?.session) {
-        setSuccessMessage('Account created and signed in successfully!');
-        setTimeout(() => {
-          if (onSuccess) {
-            onSuccess();
-          }
-        }, 800);
-      } else if (data?.user) {
-        setRequiresConfirmation(true);
-        setSuccessMessage(
-          'Registration initiated! A verification link has been sent to your email address. Please check your inbox and confirm your account before signing in.'
-        );
+        await supabase.auth.signOut();
+      }
+
+      const notice = 'Your account has been created. Please check your email and verify your address before logging in.';
+      
+      // Redirect user to the Sign In page prefilling the email they just used
+      if (onToggleSignIn) {
+        onToggleSignIn(cleanEmail, notice);
+      } else if (onSuccess) {
+        onSuccess(cleanEmail);
       }
     } catch (err: any) {
       setError(err?.message || 'An unexpected error occurred during account creation.');
@@ -199,7 +197,7 @@ export const SignUp: React.FC<SignUpProps> = ({ onToggleSignIn, onSuccess }) => 
         <button
           id="signup-submit-btn"
           type="submit"
-          disabled={loading || requiresConfirmation}
+          disabled={loading}
           className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs uppercase tracking-wider shadow-sm transition disabled:opacity-50 cursor-pointer mt-2"
         >
           <UserPlus className="w-4 h-4" />
@@ -216,18 +214,7 @@ export const SignUp: React.FC<SignUpProps> = ({ onToggleSignIn, onSuccess }) => 
         {successMessage && (
           <div className="flex items-start gap-2 p-3 text-xs text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900/60 rounded-md font-mono">
             <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-emerald-600 dark:text-emerald-400" />
-            <div className="space-y-1.5">
-              <p>{successMessage}</p>
-              {requiresConfirmation && onToggleSignIn && (
-                <button
-                  type="button"
-                  onClick={onToggleSignIn}
-                  className="inline-block mt-1 font-bold text-emerald-800 dark:text-emerald-200 underline cursor-pointer"
-                >
-                  Go to Sign In &rarr;
-                </button>
-              )}
-            </div>
+            <span>{successMessage}</span>
           </div>
         )}
       </form>
@@ -237,7 +224,7 @@ export const SignUp: React.FC<SignUpProps> = ({ onToggleSignIn, onSuccess }) => 
           Already have an account?{' '}
           <button
             type="button"
-            onClick={onToggleSignIn}
+            onClick={() => onToggleSignIn()}
             className="text-indigo-600 dark:text-indigo-400 font-bold hover:underline cursor-pointer"
           >
             Sign In

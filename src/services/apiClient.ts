@@ -24,29 +24,39 @@ class ApiClient {
   private token: string | null = null;
 
   constructor() {
-    this.token = localStorage.getItem('auth_token');
+    try {
+      this.token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
+    } catch {
+      this.token = null;
+    }
   }
 
   public setToken(token: string | null): void {
     this.token = token;
-    if (token) {
-      localStorage.setItem('auth_token', token);
-    } else {
-      localStorage.removeItem('auth_token');
+    if (typeof window !== 'undefined') {
+      try {
+        if (token) {
+          localStorage.setItem('auth_token', token);
+        } else {
+          localStorage.removeItem('auth_token');
+        }
+      } catch {
+        // LocalStorage access issues ignored
+      }
     }
   }
 
   public async getToken(): Promise<string | null> {
-    if (this.token) return this.token;
     try {
       const { data } = await supabase.auth.getSession();
       if (data?.session?.access_token) {
+        this.token = data.session.access_token;
         return data.session.access_token;
       }
     } catch {
-      // Ignored
+      // Supabase session access failed, fallback to in-memory token
     }
-    return null;
+    return this.token;
   }
 
   private async request<T = any>(endpoint: string, options: RequestInit = {}): Promise<ApiResponse<T>> {

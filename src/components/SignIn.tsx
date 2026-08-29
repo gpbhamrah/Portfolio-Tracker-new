@@ -1,23 +1,41 @@
-import React, { useState } from 'react';
-import { LogIn, Mail, Lock, Eye, EyeOff, AlertCircle } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { LogIn, Mail, Lock, Eye, EyeOff, AlertCircle, CheckCircle2 } from 'lucide-react';
+import type { User, Session } from '@supabase/supabase-js';
 import { supabase, isSupabaseConfigured } from '../lib/supabase/client';
 
 interface SignInProps {
   onToggleSignUp?: () => void;
   onForgotPassword?: () => void;
-  onSuccess?: () => void;
+  onSuccess?: (user: User, session: Session) => void;
+  initialEmail?: string;
+  successMessage?: string | null;
 }
 
 export const SignIn: React.FC<SignInProps> = ({
   onToggleSignUp,
   onForgotPassword,
   onSuccess,
+  initialEmail = '',
+  successMessage: initialSuccessMessage = null,
 }) => {
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState(initialEmail);
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [infoMessage, setInfoMessage] = useState<string | null>(initialSuccessMessage);
+
+  useEffect(() => {
+    if (initialEmail) {
+      setEmail(initialEmail);
+    }
+  }, [initialEmail]);
+
+  useEffect(() => {
+    if (initialSuccessMessage) {
+      setInfoMessage(initialSuccessMessage);
+    }
+  }, [initialSuccessMessage]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -61,10 +79,12 @@ export const SignIn: React.FC<SignInProps> = ({
         return;
       }
 
-      if (data?.session || data?.user) {
+      if (data?.session && data?.user) {
         if (onSuccess) {
-          onSuccess();
+          onSuccess(data.user, data.session);
         }
+      } else {
+        setError('Check your email and confirm your account before logging in.');
       }
     } catch (err: any) {
       setError(err?.message || 'Unable to sign in. Please check your internet connection.');
@@ -75,6 +95,13 @@ export const SignIn: React.FC<SignInProps> = ({
 
   return (
     <div className="w-full">
+      {infoMessage && (
+        <div className="mb-4 flex items-start gap-2.5 p-3 text-xs text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900/60 rounded-md font-mono animate-in fade-in slide-in-from-top-1 duration-200">
+          <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-emerald-600 dark:text-emerald-400" />
+          <span>{infoMessage}</span>
+        </div>
+      )}
+
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
           <label className="block text-xs font-mono font-medium text-slate-700 dark:text-slate-300 mb-1">

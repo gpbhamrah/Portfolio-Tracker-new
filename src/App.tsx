@@ -1,21 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import confetti from 'canvas-confetti';
 import { Holding, WatchlistItem, SectorIndex, MarketBenchmark } from './types';
-import { 
-  DEFAULT_HOLDINGS, 
-  DEFAULT_WATCHLIST, 
-  INITIAL_SECTORS, 
-  INITIAL_NIFTY 
-} from './data/defaultData';
-import { 
-  loadHoldings, 
-  saveHoldings, 
-  loadWatchlist, 
-  saveWatchlist 
-} from './utils/storage';
+import { INITIAL_SECTORS, INITIAL_NIFTY } from './data/defaultData';
 import { fetchBatchQuotes, fetchIndicesData } from './services/marketService';
 import { apiClient, AuthUser } from './services/apiClient';
+import { supabase } from './lib/supabase/client';
 import { Header } from './components/Header';
+import { LandingHero } from './components/LandingHero';
 import { PortfolioMeta } from './components/PortfolioSwitcher';
 import { BenchmarkBar } from './components/BenchmarkBar';
 import { PortfolioStats } from './components/PortfolioStats';
@@ -24,13 +15,12 @@ import { WatchlistTable } from './components/WatchlistTable';
 import { SectorHealthTable } from './components/SectorHealthTable';
 import { PortfolioAnalytics } from './components/PortfolioAnalytics';
 import { ItemModal } from './components/ItemModal';
-import { DeployModal } from './components/DeployModal';
-import { AuthModal } from './components/AuthModal';
+import { AuthModal, AuthMode } from './components/AuthModal';
 import { AdminPanelModal } from './components/AdminPanelModal';
 import { AlertsModal } from './components/AlertsModal';
 import { BrokerImportModal } from './components/BrokerImportModal';
 import { UserSettingsModal } from './components/UserSettingsModal';
-import { Briefcase, Eye, Activity, PieChart, CheckCircle2, ShieldCheck, Database, ArrowRight, CloudUpload } from 'lucide-react';
+import { Briefcase, Eye, Activity, PieChart, CheckCircle2 } from 'lucide-react';
 
 export default function App() {
   // Theme state
@@ -43,11 +33,11 @@ export default function App() {
   // User Auth State
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
   const [portfolios, setPortfolios] = useState<PortfolioMeta[]>([]);
-  const [activePortfolioId, setActivePortfolioId] = useState<string>('portfolio-demo-main');
+  const [activePortfolioId, setActivePortfolioId] = useState<string>('');
 
-  // Data states
-  const [holdings, setHoldings] = useState<Holding[]>(() => loadHoldings());
-  const [watchlist, setWatchlist] = useState<WatchlistItem[]>(() => loadWatchlist());
+  // Data states - strictly isolated per authenticated user
+  const [holdings, setHoldings] = useState<Holding[]>([]);
+  const [watchlist, setWatchlist] = useState<WatchlistItem[]>([]);
   const [sectors, setSectors] = useState<SectorIndex[]>(INITIAL_SECTORS);
   const [nifty, setNifty] = useState<MarketBenchmark>(INITIAL_NIFTY);
 
@@ -62,13 +52,12 @@ export default function App() {
 
   // Modals
   const [isItemModalOpen, setIsItemModalOpen] = useState(false);
-  const [isDeployModalOpen, setIsDeployModalOpen] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [authModalMode, setAuthModalMode] = useState<AuthMode>('signin');
   const [isAdminModalOpen, setIsAdminModalOpen] = useState(false);
   const [isAlertsModalOpen, setIsAlertsModalOpen] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [isUserSettingsModalOpen, setIsUserSettingsModalOpen] = useState(false);
-  const [dismissedMigrationBanner, setDismissedMigrationBanner] = useState(false);
 
   const [editingItem, setEditingItem] = useState<Holding | WatchlistItem | null>(null);
   const [modalType, setModalType] = useState<'holding' | 'watchlist'>('holding');
@@ -83,39 +72,12 @@ export default function App() {
     localStorage.setItem('portfolio_theme_mode', String(darkMode));
   }, [darkMode]);
 
-  // Persist holdings whenever changed
-  useEffect(() => {
-    saveHoldings(holdings);
-  }, [holdings]);
-
-  // Persist watchlist whenever changed
-  useEffect(() => {
-    saveWatchlist(watchlist);
-  }, [watchlist]);
-
   const showToast = (text: string, type: 'success' | 'info' = 'success') => {
     setToastMessage({ text, type });
     setTimeout(() => {
       setToastMessage(null);
     }, 3500);
   };
-
-  // Check login state on mount
-  useEffect(() => {
-    const checkAuth = async () => {
-      const res = await apiClient.getMe();
-      if (res.success && res.data?.user) {
-        setCurrentUser(res.data.user);
-        await loadUserPortfolios(res.data.user.id);
-        await loadUserWatchlist();
-      } else {
-        if (apiClient.getToken()) {
-          apiClient.setToken(null);
-        }
-      }
-    };
-    checkAuth();
-  }, []);
 
   const loadUserWatchlist = async () => {
     try {
@@ -136,30 +98,17 @@ export default function App() {
           notes: w.notes,
         }));
         setWatchlist(dbWatchlist);
+      } else {
+        setWatchlist([]);
       }
     } catch (err) {
       console.error('Failed to load user watchlist', err);
-    }
-  };
-
-  const loadUserPortfolios = async (userId: string) => {
-    try {
-      const res = await apiClient.getPortfolios();
-      if (res.success && res.data && res.data.length > 0) {
-        setPortfolios(res.data);
-        const defaultPort = res.data.find((p: any) => p.isDefault) || res.data[0];
-        setActivePortfolioId(defaultPort.id);
-        await loadDatabasePortfolio(defaultPort.id);
-      } else {
-        setPortfolios([]);
-        setHoldings([]);
-      }
-    } catch (err) {
-      console.error('Failed to load user portfolios', err);
+      setWatchlist([]);
     }
   };
 
   const loadDatabasePortfolio = async (portfolioId: string) => {
+    if (!portfolioId) return;
     try {
       const res = await apiClient.getPortfolioSummary(portfolioId);
       if (res.success && res.data) {
@@ -180,11 +129,90 @@ export default function App() {
           updatedAt: new Date().toISOString(),
         }));
         setHoldings(dbHoldings);
+      } else {
+        setHoldings([]);
       }
     } catch (err) {
       console.error('Failed to load portfolio details from database', err);
+      setHoldings([]);
     }
   };
+
+  const loadUserPortfolios = async (userId: string) => {
+    try {
+      const res = await apiClient.getPortfolios();
+      if (res.success && res.data && res.data.length > 0) {
+        setPortfolios(res.data);
+        const defaultPort = res.data.find((p: any) => p.isDefault) || res.data[0];
+        setActivePortfolioId(defaultPort.id);
+        await loadDatabasePortfolio(defaultPort.id);
+      } else {
+        setPortfolios([]);
+        setHoldings([]);
+      }
+    } catch (err) {
+      console.error('Failed to load user portfolios', err);
+      setPortfolios([]);
+      setHoldings([]);
+    }
+  };
+
+  // Check login state and listen for Supabase auth events
+  useEffect(() => {
+    const checkAuth = async () => {
+      const res = await apiClient.getMe();
+      if (res.success && res.data?.user) {
+        setCurrentUser(res.data.user);
+        await loadUserPortfolios(res.data.user.id);
+        await loadUserWatchlist();
+      } else {
+        if (apiClient.getToken()) {
+          apiClient.setToken(null);
+        }
+        setCurrentUser(null);
+        setHoldings([]);
+        setWatchlist([]);
+        setPortfolios([]);
+      }
+    };
+
+    checkAuth();
+
+    // Listen to Supabase auth state changes
+    const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        setAuthModalMode('reset');
+        setIsAuthModalOpen(true);
+      } else if (event === 'SIGNED_IN' && session?.user) {
+        const res = await apiClient.getMe();
+        if (res.success && res.data?.user) {
+          setCurrentUser(res.data.user);
+          await loadUserPortfolios(res.data.user.id);
+          await loadUserWatchlist();
+        }
+      } else if (event === 'SIGNED_OUT') {
+        setCurrentUser(null);
+        setPortfolios([]);
+        setHoldings([]);
+        setWatchlist([]);
+      }
+    });
+
+    // Check for password recovery token in URL on initial mount
+    if (
+      typeof window !== 'undefined' &&
+      (window.location.hash.includes('type=recovery') ||
+        window.location.search.includes('type=recovery') ||
+        window.location.pathname.includes('/reset-password'))
+    ) {
+      setAuthModalMode('reset');
+      setIsAuthModalOpen(true);
+    }
+
+    return () => {
+      authListener?.subscription?.unsubscribe();
+    };
+  }, []);
 
   const handleCreatePortfolio = async (name: string, description?: string) => {
     try {
@@ -207,11 +235,17 @@ export default function App() {
   };
 
   const handleLogout = async () => {
-    await apiClient.logout();
+    try {
+      await apiClient.logout();
+      await supabase.auth.signOut();
+    } catch (e) {
+      console.warn('Sign out error:', e);
+    }
     setCurrentUser(null);
     setPortfolios([]);
-    setHoldings(DEFAULT_HOLDINGS);
-    setWatchlist(DEFAULT_WATCHLIST);
+    setActivePortfolioId('');
+    setHoldings([]);
+    setWatchlist([]);
     showToast('Signed out successfully');
   };
 
@@ -223,57 +257,61 @@ export default function App() {
     const startTime = performance.now();
 
     try {
-      // 1. Gather all unique tickers from holdings, watchlist, and sector indices
+      // 1. Gather all unique tickers from holdings and watchlist
       const holdingTickers = holdings.map((h) => h.ticker);
       const watchlistTickers = watchlist.map((w) => w.ticker);
       const allTickers = Array.from(new Set([...holdingTickers, ...watchlistTickers]));
 
       // 2. Fetch stock quotes & index data simultaneously in parallel
       const [quotesMap, indicesResult] = await Promise.all([
-        fetchBatchQuotes(allTickers),
+        allTickers.length > 0 ? fetchBatchQuotes(allTickers) : Promise.resolve({}),
         fetchIndicesData(sectors),
       ]);
 
       let newlyHitTargets = 0;
 
       // 3. Update holdings with fast quotes
-      setHoldings((prevHoldings) =>
-        prevHoldings.map((item) => {
-          const q = quotesMap[item.ticker.toUpperCase()];
-          if (q && q.price) {
-            const wasBelowTarget = item.cmp < item.sellPrice;
-            const isNowTargetHit = item.sellPrice > 0 && q.price >= item.sellPrice;
-            if (wasBelowTarget && isNowTargetHit) {
-              newlyHitTargets++;
-            }
+      if (holdings.length > 0) {
+        setHoldings((prevHoldings) =>
+          prevHoldings.map((item) => {
+            const q = quotesMap[item.ticker.toUpperCase()];
+            if (q && q.price) {
+              const wasBelowTarget = item.cmp < item.sellPrice;
+              const isNowTargetHit = item.sellPrice > 0 && q.price >= item.sellPrice;
+              if (wasBelowTarget && isNowTargetHit) {
+                newlyHitTargets++;
+              }
 
-            return {
-              ...item,
-              cmp: q.price,
-              dayChange: q.change,
-              dayChangePercent: q.changePercent,
-              updatedAt: new Date().toISOString(),
-            };
-          }
-          return item;
-        })
-      );
+              return {
+                ...item,
+                cmp: q.price,
+                dayChange: q.change,
+                dayChangePercent: q.changePercent,
+                updatedAt: new Date().toISOString(),
+              };
+            }
+            return item;
+          })
+        );
+      }
 
       // 4. Update watchlist with fast quotes
-      setWatchlist((prevWatchlist) =>
-        prevWatchlist.map((item) => {
-          const q = quotesMap[item.ticker.toUpperCase()];
-          if (q && q.price) {
-            return {
-              ...item,
-              cmp: q.price,
-              dayChange: q.change,
-              dayChangePercent: q.changePercent,
-            };
-          }
-          return item;
-        })
-      );
+      if (watchlist.length > 0) {
+        setWatchlist((prevWatchlist) =>
+          prevWatchlist.map((item) => {
+            const q = quotesMap[item.ticker.toUpperCase()];
+            if (q && q.price) {
+              return {
+                ...item,
+                cmp: q.price,
+                dayChange: q.change,
+                dayChangePercent: q.changePercent,
+              };
+            }
+            return item;
+          })
+        );
+      }
 
       // 5. Update benchmark and sector indices
       if (indicesResult.nifty) {
@@ -296,16 +334,15 @@ export default function App() {
           origin: { y: 0.6 },
         });
         showToast(`🎯 Target price achieved on ${newlyHitTargets} holding(s)!`, 'success');
-      } else {
+      } else if (currentUser) {
         showToast(`⚡ Live prices synced in ${elapsed < 1000 ? `${elapsed}ms` : `${(elapsed / 1000).toFixed(1)}s`}`);
       }
     } catch (err) {
       console.error('Failed to sync market prices', err);
-      showToast('Price sync finished with available data', 'info');
     } finally {
       setIsLoadingPrices(false);
     }
-  }, [holdings, watchlist, sectors]);
+  }, [holdings, watchlist, sectors, currentUser]);
 
   // Initial fetch on mount
   useEffect(() => {
@@ -323,33 +360,33 @@ export default function App() {
       }
       return [newHolding, ...prev];
     });
-    showToast(`Saved position ${newHolding.name} (${newHolding.ticker})`);
 
-    // If logged in, also push transaction to server
-    if (currentUser) {
-      apiClient.addTransaction({
-        portfolioId: activePortfolioId,
-        symbol: newHolding.ticker,
-        name: newHolding.name,
-        sector: newHolding.sector,
-        type: 'BUY',
-        quantity: newHolding.qty,
-        price: newHolding.buyPrice,
-        date: newHolding.buyDate,
-        notes: newHolding.notes,
-      }).catch((e) => console.warn('Server transaction record notice:', e));
+    if (currentUser && activePortfolioId) {
+      try {
+        await apiClient.saveHolding(activePortfolioId, {
+          id: newHolding.id,
+          name: newHolding.name,
+          ticker: newHolding.ticker,
+          sector: newHolding.sector,
+          qty: newHolding.qty,
+          buyPrice: newHolding.buyPrice,
+          buyDate: newHolding.buyDate,
+          cmp: newHolding.cmp,
+          sellPrice: newHolding.sellPrice,
+          stopLoss: newHolding.stopLoss,
+          notes: newHolding.notes,
+        });
+      } catch (err) {
+        console.warn('Failed to sync holding to database:', err);
+      }
     }
 
-    // Instantly sync latest live quote in background
-    try {
-      const quotesMap = await fetchBatchQuotes([newHolding.ticker]);
-      const cleanSym = newHolding.ticker.toUpperCase();
-      const q =
-        quotesMap[cleanSym] ||
-        quotesMap[`${cleanSym}.NS`] ||
-        quotesMap[`${cleanSym}.BO`] ||
-        Object.values(quotesMap)[0];
+    showToast(editingItem ? 'Holding updated' : 'Added position to portfolio');
 
+    // Instant background price update
+    try {
+      const singleQuote = await fetchBatchQuotes([newHolding.ticker]);
+      const q = singleQuote[newHolding.ticker.toUpperCase()];
       if (q && q.price) {
         setHoldings((prev) =>
           prev.map((h) =>
@@ -381,18 +418,31 @@ export default function App() {
       }
       return [newItem, ...prev];
     });
-    showToast(`Added ${newItem.name} to Watchlist`);
 
-    // Instantly sync latest live quote in background
+    if (currentUser) {
+      try {
+        await apiClient.saveWatchlistItem({
+          id: newItem.id,
+          name: newItem.name,
+          ticker: newItem.ticker,
+          sector: newItem.sector,
+          targetEntryPrice: newItem.targetEntryPrice,
+          cmp: newItem.cmp,
+          targetSellPrice: newItem.targetSellPrice,
+          stopLoss: newItem.stopLoss,
+          notes: newItem.notes,
+        });
+      } catch (err) {
+        console.warn('Failed to sync watchlist item to database:', err);
+      }
+    }
+
+    showToast(editingItem ? 'Watchlist item updated' : 'Added symbol to Watchlist');
+
+    // Instant background price update
     try {
-      const quotesMap = await fetchBatchQuotes([newItem.ticker]);
-      const cleanSym = newItem.ticker.toUpperCase();
-      const q =
-        quotesMap[cleanSym] ||
-        quotesMap[`${cleanSym}.NS`] ||
-        quotesMap[`${cleanSym}.BO`] ||
-        Object.values(quotesMap)[0];
-
+      const singleQuote = await fetchBatchQuotes([newItem.ticker]);
+      const q = singleQuote[newItem.ticker.toUpperCase()];
       if (q && q.price) {
         setWatchlist((prev) =>
           prev.map((w) =>
@@ -468,7 +518,7 @@ export default function App() {
       updatedAt: new Date().toISOString(),
     };
 
-    setHoldings((prev) => [newHolding, ...prev]);
+    handleSaveHolding(newHolding);
     setWatchlist((prev) => prev.filter((w) => w.id !== item.id));
     showToast(`Moved ${item.name} into Active Holdings!`);
   };
@@ -481,6 +531,11 @@ export default function App() {
     setTimeout(() => {
       handleFetchAllMarketData();
     }, 200);
+  };
+
+  const openAuthModal = (mode: AuthMode = 'signin') => {
+    setAuthModalMode(mode);
+    setIsAuthModalOpen(true);
   };
 
   return (
@@ -509,8 +564,7 @@ export default function App() {
             setModalType(activeTab === 'watchlist' ? 'watchlist' : 'holding');
             setIsItemModalOpen(true);
           }}
-          onOpenDeployModal={() => setIsDeployModalOpen(true)}
-          onOpenAuthModal={() => setIsAuthModalOpen(true)}
+          onOpenAuthModal={openAuthModal}
           onOpenAdminModal={() => setIsAdminModalOpen(true)}
           onOpenAlertsModal={() => setIsAlertsModalOpen(true)}
           onOpenImportModal={() => setIsImportModalOpen(true)}
@@ -526,231 +580,222 @@ export default function App() {
           onImportData={handleImportData}
         />
 
-        {/* Benchmark Bar (Nifty 50 + EMAs) */}
-        <BenchmarkBar nifty={nifty} />
+        {currentUser ? (
+          /* ========================================================================= */
+          /* AUTHENTICATED USER DASHBOARD                                              */
+          /* ========================================================================= */
+          <>
+            {/* Benchmark Bar (Nifty 50 + EMAs) */}
+            <BenchmarkBar nifty={nifty} />
 
-        {/* Local Storage Data Migration Banner (Offered to logged in users who have un-synced local data) */}
-        {currentUser && holdings.length > 0 && !dismissedMigrationBanner && (
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-3.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/80 font-mono text-xs text-indigo-900 dark:text-indigo-200">
-            <div className="flex items-center gap-2.5">
-              <CloudUpload className="w-5 h-5 text-indigo-600 dark:text-indigo-400 shrink-0" />
-              <div>
-                <span className="font-bold">Sync Browser Portfolio to Cloud:</span>{' '}
-                <span>
-                  You have {holdings.length} position{holdings.length > 1 ? 's' : ''} currently loaded in your browser session. Save them permanently to your account database.
-                </span>
+            {/* Key Metrics Stats Grid */}
+            <PortfolioStats holdings={holdings} watchlist={watchlist} />
+
+            {/* Tabs Bar */}
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 dark:border-slate-800 pb-3">
+              <div className="flex items-center gap-1 sm:gap-2 overflow-x-auto pb-1 max-w-full font-mono">
+                <button
+                  id="tab-holdings"
+                  onClick={() => setActiveTab('holdings')}
+                  className={`flex items-center gap-2 px-3.5 py-2 rounded text-xs font-bold transition cursor-pointer border ${
+                    activeTab === 'holdings'
+                      ? 'bg-indigo-600 text-white border-indigo-500 shadow-sm'
+                      : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 border-slate-200 dark:border-slate-800'
+                  }`}
+                >
+                  <Briefcase className="w-3.5 h-3.5" />
+                  <span>ACTIVE HOLDINGS</span>
+                  <span
+                    className={`px-1.5 py-0.2 rounded text-[10px] font-mono ${
+                      activeTab === 'holdings'
+                        ? 'bg-indigo-800 text-white'
+                        : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-400'
+                    }`}
+                  >
+                    {holdings.length}
+                  </span>
+                </button>
+
+                <button
+                  id="tab-watchlist"
+                  onClick={() => setActiveTab('watchlist')}
+                  className={`flex items-center gap-2 px-3.5 py-2 rounded text-xs font-bold transition cursor-pointer border ${
+                    activeTab === 'watchlist'
+                      ? 'bg-indigo-600 text-white border-indigo-500 shadow-sm'
+                      : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 border-slate-200 dark:border-slate-800'
+                  }`}
+                >
+                  <Eye className="w-3.5 h-3.5" />
+                  <span>WATCHLIST</span>
+                  <span
+                    className={`px-1.5 py-0.2 rounded text-[10px] font-mono ${
+                      activeTab === 'watchlist'
+                        ? 'bg-indigo-800 text-white'
+                        : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-400'
+                    }`}
+                  >
+                    {watchlist.length}
+                  </span>
+                </button>
+
+                <button
+                  id="tab-sectors"
+                  onClick={() => setActiveTab('sectors')}
+                  className={`flex items-center gap-2 px-3.5 py-2 rounded text-xs font-bold transition cursor-pointer border ${
+                    activeTab === 'sectors'
+                      ? 'bg-indigo-600 text-white border-indigo-500 shadow-sm'
+                      : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 border-slate-200 dark:border-slate-800'
+                  }`}
+                >
+                  <Activity className="w-3.5 h-3.5" />
+                  <span>SECTOR MOMENTUM</span>
+                  <span
+                    className={`px-1.5 py-0.2 rounded text-[10px] font-mono ${
+                      activeTab === 'sectors'
+                        ? 'bg-indigo-800 text-white'
+                        : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-400'
+                    }`}
+                  >
+                    {sectors.length}
+                  </span>
+                </button>
+
+                <button
+                  id="tab-analytics"
+                  onClick={() => setActiveTab('analytics')}
+                  className={`flex items-center gap-2 px-3.5 py-2 rounded text-xs font-bold transition cursor-pointer border ${
+                    activeTab === 'analytics'
+                      ? 'bg-indigo-600 text-white border-indigo-500 shadow-sm'
+                      : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 border-slate-200 dark:border-slate-800'
+                  }`}
+                >
+                  <PieChart className="w-3.5 h-3.5" />
+                  <span>ALLOCATION RISK</span>
+                </button>
               </div>
             </div>
-            <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto justify-end">
-              <button
-                type="button"
-                onClick={() => setDismissedMigrationBanner(true)}
-                className="px-2.5 py-1 rounded text-[11px] text-slate-600 dark:text-slate-400 hover:bg-slate-200/50 dark:hover:bg-slate-800/50 transition cursor-pointer"
-              >
-                Dismiss
-              </button>
-              <button
-                type="button"
-                onClick={() => setIsImportModalOpen(true)}
-                className="flex items-center gap-1.5 px-3 py-1 rounded font-bold bg-indigo-600 hover:bg-indigo-500 text-white transition cursor-pointer shadow-xs"
-              >
-                <span>Migrate to Database</span>
-                <ArrowRight className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          </div>
-        )}
 
-        {/* Key Metrics Stats Grid */}
-        <PortfolioStats holdings={holdings} watchlist={watchlist} />
+            {/* Tab Content Panels */}
+            <main>
+              {activeTab === 'holdings' && (
+                <HoldingsTable
+                  holdings={holdings}
+                  onEdit={(holding) => {
+                    setEditingItem(holding);
+                    setModalType('holding');
+                    setIsItemModalOpen(true);
+                  }}
+                  onDelete={handleDeleteHolding}
+                  onUpdateBuyDate={handleUpdateBuyDate}
+                />
+              )}
 
-        {/* Tabs Bar */}
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 dark:border-slate-800 pb-3">
-          <div className="flex items-center gap-1 sm:gap-2 overflow-x-auto pb-1 max-w-full font-mono">
-            <button
-              id="tab-holdings"
-              onClick={() => setActiveTab('holdings')}
-              className={`flex items-center gap-2 px-3.5 py-2 rounded text-xs font-bold transition cursor-pointer border ${
-                activeTab === 'holdings'
-                  ? 'bg-indigo-600 text-white border-indigo-500 shadow-sm'
-                  : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 border-slate-200 dark:border-slate-800'
-              }`}
-            >
-              <Briefcase className="w-3.5 h-3.5" />
-              <span>ACTIVE HOLDINGS</span>
-              <span
-                className={`px-1.5 py-0.2 rounded text-[10px] font-mono ${
-                  activeTab === 'holdings'
-                    ? 'bg-indigo-800 text-white'
-                    : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-400'
-                }`}
-              >
-                {holdings.length}
-              </span>
-            </button>
+              {activeTab === 'watchlist' && (
+                <WatchlistTable
+                  watchlist={watchlist}
+                  onEdit={(item) => {
+                    setEditingItem(item);
+                    setModalType('watchlist');
+                    setIsItemModalOpen(true);
+                  }}
+                  onDelete={handleDeleteWatchlist}
+                  onMoveToHoldings={handleMoveToHoldings}
+                />
+              )}
 
-            <button
-              id="tab-watchlist"
-              onClick={() => setActiveTab('watchlist')}
-              className={`flex items-center gap-2 px-3.5 py-2 rounded text-xs font-bold transition cursor-pointer border ${
-                activeTab === 'watchlist'
-                  ? 'bg-indigo-600 text-white border-indigo-500 shadow-sm'
-                  : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 border-slate-200 dark:border-slate-800'
-              }`}
-            >
-              <Eye className="w-3.5 h-3.5" />
-              <span>WATCHLIST</span>
-              <span
-                className={`px-1.5 py-0.2 rounded text-[10px] font-mono ${
-                  activeTab === 'watchlist'
-                    ? 'bg-indigo-800 text-white'
-                    : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-400'
-                }`}
-              >
-                {watchlist.length}
-              </span>
-            </button>
+              {activeTab === 'sectors' && <SectorHealthTable sectors={sectors} />}
 
-            <button
-              id="tab-sectors"
-              onClick={() => setActiveTab('sectors')}
-              className={`flex items-center gap-2 px-3.5 py-2 rounded text-xs font-bold transition cursor-pointer border ${
-                activeTab === 'sectors'
-                  ? 'bg-indigo-600 text-white border-indigo-500 shadow-sm'
-                  : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 border-slate-200 dark:border-slate-800'
-              }`}
-            >
-              <Activity className="w-3.5 h-3.5" />
-              <span>SECTOR MOMENTUM</span>
-              <span
-                className={`px-1.5 py-0.2 rounded text-[10px] font-mono ${
-                  activeTab === 'sectors'
-                    ? 'bg-indigo-800 text-white'
-                    : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-400'
-                }`}
-              >
-                {sectors.length}
-              </span>
-            </button>
+              {activeTab === 'analytics' && <PortfolioAnalytics holdings={holdings} />}
+            </main>
 
-            <button
-              id="tab-analytics"
-              onClick={() => setActiveTab('analytics')}
-              className={`flex items-center gap-2 px-3.5 py-2 rounded text-xs font-bold transition cursor-pointer border ${
-                activeTab === 'analytics'
-                  ? 'bg-indigo-600 text-white border-indigo-500 shadow-sm'
-                  : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 border-slate-200 dark:border-slate-800'
-              }`}
-            >
-              <PieChart className="w-3.5 h-3.5" />
-              <span>ALLOCATION RISK</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Tab Content Panels */}
-        <main>
-          {activeTab === 'holdings' && (
-            <HoldingsTable
-              holdings={holdings}
-              onEdit={(holding) => {
-                setEditingItem(holding);
-                setModalType('holding');
-                setIsItemModalOpen(true);
-              }}
-              onDelete={handleDeleteHolding}
-              onUpdateBuyDate={handleUpdateBuyDate}
-            />
-          )}
-
-          {activeTab === 'watchlist' && (
-            <WatchlistTable
-              watchlist={watchlist}
-              onEdit={(item) => {
-                setEditingItem(item);
-                setModalType('watchlist');
-                setIsItemModalOpen(true);
-              }}
-              onDelete={handleDeleteWatchlist}
-              onMoveToHoldings={handleMoveToHoldings}
-            />
-          )}
-
-          {activeTab === 'sectors' && <SectorHealthTable sectors={sectors} />}
-
-          {activeTab === 'analytics' && <PortfolioAnalytics holdings={holdings} />}
-        </main>
-
-        {/* Bottom Analytics when on holdings tab */}
-        {activeTab === 'holdings' && holdings.length > 0 && (
-          <div className="pt-2">
-            <PortfolioAnalytics holdings={holdings} />
-          </div>
+            {/* Bottom Analytics when on holdings tab */}
+            {activeTab === 'holdings' && holdings.length > 0 && (
+              <div className="pt-2">
+                <PortfolioAnalytics holdings={holdings} />
+              </div>
+            )}
+          </>
+        ) : (
+          /* ========================================================================= */
+          /* UN-AUTHENTICATED LANDING & AUTH PROMOTION                                 */
+          /* ========================================================================= */
+          <LandingHero
+            onOpenSignIn={() => openAuthModal('signin')}
+            onOpenSignUp={() => openAuthModal('signup')}
+          />
         )}
       </div>
 
       {/* Add / Edit Position Modal */}
-      <ItemModal
-        isOpen={isItemModalOpen}
-        onClose={() => {
-          setIsItemModalOpen(false);
-          setEditingItem(null);
-        }}
-        onSaveHolding={handleSaveHolding}
-        onSaveWatchlist={handleSaveWatchlist}
-        initialItem={editingItem}
-        initialType={modalType}
-      />
+      {currentUser && (
+        <ItemModal
+          isOpen={isItemModalOpen}
+          onClose={() => {
+            setIsItemModalOpen(false);
+            setEditingItem(null);
+          }}
+          onSaveHolding={handleSaveHolding}
+          onSaveWatchlist={handleSaveWatchlist}
+          initialItem={editingItem}
+          initialType={modalType}
+        />
+      )}
 
-      {/* Deploy to GitHub & Vercel Modal */}
-      <DeployModal
-        isOpen={isDeployModalOpen}
-        onClose={() => setIsDeployModalOpen(false)}
-      />
-
-      {/* Multi-User Auth Modal */}
+      {/* Multi-User Auth Modal (Sign In, Sign Up, Forgot Password, Reset Password) */}
       <AuthModal
         isOpen={isAuthModalOpen}
+        initialMode={authModalMode}
         onClose={() => setIsAuthModalOpen(false)}
-        onSuccess={async (user) => {
-          setCurrentUser(user);
-          await loadUserPortfolios(user.id);
-          await loadUserWatchlist();
-          showToast(`Welcome, ${user.name}!`);
+        onSuccess={async () => {
+          const res = await apiClient.getMe();
+          if (res.success && res.data?.user) {
+            setCurrentUser(res.data.user);
+            await loadUserPortfolios(res.data.user.id);
+            await loadUserWatchlist();
+            showToast(`Welcome, ${res.data.user.name || res.data.user.email}!`);
+          }
         }}
       />
 
       {/* Platform Admin Console Modal */}
-      <AdminPanelModal
-        isOpen={isAdminModalOpen}
-        onClose={() => setIsAdminModalOpen(false)}
-      />
+      {currentUser?.role === 'ADMIN' && (
+        <AdminPanelModal
+          isOpen={isAdminModalOpen}
+          onClose={() => setIsAdminModalOpen(false)}
+        />
+      )}
 
       {/* Alerts & Triggers Modal */}
-      <AlertsModal
-        isOpen={isAlertsModalOpen}
-        onClose={() => setIsAlertsModalOpen(false)}
-      />
+      {currentUser && (
+        <AlertsModal
+          isOpen={isAlertsModalOpen}
+          onClose={() => setIsAlertsModalOpen(false)}
+        />
+      )}
 
       {/* Broker CSV Import Modal */}
-      <BrokerImportModal
-        isOpen={isImportModalOpen}
-        onClose={() => setIsImportModalOpen(false)}
-        portfolioId={activePortfolioId}
-        currentLocalHoldings={holdings}
-        onImportSuccess={() => {
-          loadDatabasePortfolio(activePortfolioId);
-          showToast('Transactions synced to database!');
-        }}
-      />
+      {currentUser && (
+        <BrokerImportModal
+          isOpen={isImportModalOpen}
+          onClose={() => setIsImportModalOpen(false)}
+          portfolioId={activePortfolioId}
+          currentLocalHoldings={holdings}
+          onImportSuccess={() => {
+            loadDatabasePortfolio(activePortfolioId);
+            showToast('Transactions synced to database!');
+          }}
+        />
+      )}
 
       {/* Account Settings & Security Modal */}
-      <UserSettingsModal
-        isOpen={isUserSettingsModalOpen}
-        onClose={() => setIsUserSettingsModalOpen(false)}
-        user={currentUser}
-        onUserLoggedOut={handleLogout}
-      />
+      {currentUser && (
+        <UserSettingsModal
+          isOpen={isUserSettingsModalOpen}
+          onClose={() => setIsUserSettingsModalOpen(false)}
+          user={currentUser}
+          onUserLoggedOut={handleLogout}
+        />
+      )}
     </div>
   );
 }

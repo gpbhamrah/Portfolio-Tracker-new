@@ -16,7 +16,7 @@ export const SectorHealthTable: React.FC<SectorHealthTableProps> = ({ sectors })
             Sectoral Momentum & 50-EMA Diagnostics
           </h3>
           <p className="text-[11px] text-slate-500 dark:text-slate-400 font-mono mt-0.5">
-            Gauge institutional sectoral rotation by measuring index price relation against the authentic 50-day EMA
+            Institutional sectoral rotation analysis with authentic 50-day EMA and session distance metrics
           </p>
         </div>
       </div>
@@ -30,14 +30,24 @@ export const SectorHealthTable: React.FC<SectorHealthTableProps> = ({ sectors })
               <th className="p-3.5 text-right">Current Value</th>
               <th className="p-3.5 text-right">Daily Change</th>
               <th className="p-3.5 text-right">50 EMA</th>
+              <th className="p-3.5 text-right">vs 50 EMA</th>
               <th className="p-3.5 text-center">Trend Structure</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
             {sectors.map((sec) => {
-              const isUnavailable = sec.unavailable || !sec.value || sec.value <= 0;
+              const isUnavailable = sec.unavailable || !sec.value || sec.value <= 0 || !sec.ema50 || sec.ema50 <= 0;
               const isBullish = !isUnavailable && sec.value >= sec.ema50;
               const isPositive = sec.change >= 0;
+
+              // Calculate distance percentage: ((Current Value - EMA50) / EMA50) * 100
+              const distance = sec.distanceFromEma50 !== undefined
+                ? sec.distanceFromEma50
+                : !isUnavailable && sec.ema50 > 0
+                ? Math.round(((sec.value - sec.ema50) / sec.ema50) * 10000) / 100
+                : null;
+
+              const isDistancePositive = distance !== null && distance >= 0;
 
               return (
                 <tr
@@ -52,7 +62,7 @@ export const SectorHealthTable: React.FC<SectorHealthTableProps> = ({ sectors })
                   </td>
                   <td className="p-3.5 text-right font-bold text-slate-900 dark:text-white font-mono">
                     {isUnavailable ? (
-                      <span className="text-slate-400 dark:text-slate-500 font-normal">Sync pending</span>
+                      <span className="text-slate-400 dark:text-slate-500 font-normal">Data unavailable</span>
                     ) : (
                       sec.value.toLocaleString('en-IN', {
                         minimumFractionDigits: 2,
@@ -81,17 +91,36 @@ export const SectorHealthTable: React.FC<SectorHealthTableProps> = ({ sectors })
                       </span>
                     )}
                   </td>
-                  <td className="p-3.5 text-right text-slate-600 dark:text-slate-300 font-mono">
+                  <td className="p-3.5 text-right text-slate-700 dark:text-slate-200 font-mono font-medium">
                     {isUnavailable || !sec.ema50 ? (
                       <span className="text-slate-400 dark:text-slate-500 font-mono">--</span>
                     ) : (
-                      sec.ema50.toLocaleString('en-IN', { maximumFractionDigits: 2 })
+                      sec.ema50.toLocaleString('en-IN', {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })
+                    )}
+                  </td>
+                  <td className="p-3.5 text-right font-mono">
+                    {isUnavailable || distance === null ? (
+                      <span className="text-slate-400 dark:text-slate-500 font-mono">--</span>
+                    ) : (
+                      <span
+                        className={`inline-flex items-center font-bold text-xs ${
+                          isDistancePositive
+                            ? 'text-emerald-600 dark:text-emerald-400'
+                            : 'text-rose-600 dark:text-rose-400'
+                        }`}
+                      >
+                        {isDistancePositive ? '+' : ''}
+                        {distance.toFixed(2)}%
+                      </span>
                     )}
                   </td>
                   <td className="p-3.5 text-center">
                     {isUnavailable ? (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-mono text-slate-500 bg-slate-100 dark:bg-slate-800">
-                        <Clock className="w-3 h-3" /> Market data unavailable
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[11px] font-mono text-slate-500 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                        <Clock className="w-3 h-3" /> Data unavailable
                       </span>
                     ) : (
                       <span

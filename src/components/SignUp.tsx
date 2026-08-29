@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { UserPlus, Mail, Lock, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { UserPlus, User, Mail, Lock, Eye, EyeOff, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { supabase, isSupabaseConfigured } from '../lib/supabase/client';
 
 interface SignUpProps {
@@ -8,8 +8,12 @@ interface SignUpProps {
 }
 
 export const SignUp: React.FC<SignUpProps> = ({ onToggleSignIn, onSuccess }) => {
+  const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -21,14 +25,30 @@ export const SignUp: React.FC<SignUpProps> = ({ onToggleSignIn, onSuccess }) => 
     setSuccessMessage(null);
     setRequiresConfirmation(false);
 
+    const cleanName = fullName.trim();
+    if (!cleanName) {
+      setError('Please enter your full name.');
+      return;
+    }
+
     const cleanEmail = email.trim();
     if (!cleanEmail || !cleanEmail.includes('@')) {
       setError('Please enter a valid email address.');
       return;
     }
 
-    if (password.length < 6) {
-      setError('Password must be at least 6 characters long.');
+    if (!password) {
+      setError('Password cannot be empty.');
+      return;
+    }
+
+    if (password.length < 8) {
+      setError('Password must be at least 8 characters long.');
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      setError('Passwords do not match.');
       return;
     }
 
@@ -45,6 +65,12 @@ export const SignUp: React.FC<SignUpProps> = ({ onToggleSignIn, onSuccess }) => 
       const { data, error: signUpError } = await supabase.auth.signUp({
         email: cleanEmail,
         password,
+        options: {
+          data: {
+            full_name: cleanName,
+            name: cleanName,
+          },
+        },
       });
 
       if (signUpError) {
@@ -54,7 +80,6 @@ export const SignUp: React.FC<SignUpProps> = ({ onToggleSignIn, onSuccess }) => 
       }
 
       if (data?.session) {
-        // Automatic session established (email confirmation disabled in Supabase)
         setSuccessMessage('Account created and signed in successfully!');
         setTimeout(() => {
           if (onSuccess) {
@@ -62,7 +87,6 @@ export const SignUp: React.FC<SignUpProps> = ({ onToggleSignIn, onSuccess }) => 
           }
         }, 800);
       } else if (data?.user) {
-        // Email confirmation is required by Supabase project settings
         setRequiresConfirmation(true);
         setSuccessMessage(
           'Registration initiated! A verification link has been sent to your email address. Please check your inbox and confirm your account before signing in.'
@@ -77,7 +101,27 @@ export const SignUp: React.FC<SignUpProps> = ({ onToggleSignIn, onSuccess }) => 
 
   return (
     <div className="w-full">
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <form onSubmit={handleSubmit} className="space-y-3.5">
+        {/* Full Name */}
+        <div>
+          <label className="block text-xs font-mono font-medium text-slate-700 dark:text-slate-300 mb-1">
+            Full Name
+          </label>
+          <div className="relative">
+            <User className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              id="signup-name"
+              type="text"
+              required
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+              placeholder="Enter your full name"
+              className="w-full pl-9 pr-3 py-2 text-sm bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-md text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono"
+            />
+          </div>
+        </div>
+
+        {/* Email Address */}
         <div>
           <label className="block text-xs font-mono font-medium text-slate-700 dark:text-slate-300 mb-1">
             Email Address
@@ -91,11 +135,12 @@ export const SignUp: React.FC<SignUpProps> = ({ onToggleSignIn, onSuccess }) => 
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="you@example.com"
-              className="w-full pl-9 pr-3 py-2 text-sm bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-md text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono"
+              className="w-full pl-9 pr-3 py-2 text-sm bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-md text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono"
             />
           </div>
         </div>
 
+        {/* Password */}
         <div>
           <label className="block text-xs font-mono font-medium text-slate-700 dark:text-slate-300 mb-1">
             Password
@@ -104,14 +149,50 @@ export const SignUp: React.FC<SignUpProps> = ({ onToggleSignIn, onSuccess }) => 
             <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               id="signup-password"
-              type="password"
+              type={showPassword ? 'text' : 'password'}
               required
-              minLength={6}
+              minLength={8}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="Minimum 6 characters"
-              className="w-full pl-9 pr-3 py-2 text-sm bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-md text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono"
+              placeholder="Create a password (min 8 chars)"
+              className="w-full pl-9 pr-10 py-2 text-sm bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-md text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono"
             />
+            <button
+              type="button"
+              onClick={() => setShowPassword(!showPassword)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer p-0.5"
+              title={showPassword ? 'Hide password' : 'Show password'}
+            >
+              {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+            </button>
+          </div>
+        </div>
+
+        {/* Confirm Password */}
+        <div>
+          <label className="block text-xs font-mono font-medium text-slate-700 dark:text-slate-300 mb-1">
+            Confirm Password
+          </label>
+          <div className="relative">
+            <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              id="signup-confirm-password"
+              type={showConfirmPassword ? 'text' : 'password'}
+              required
+              minLength={8}
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              placeholder="Re-enter your password"
+              className="w-full pl-9 pr-10 py-2 text-sm bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-md text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono"
+            />
+            <button
+              type="button"
+              onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer p-0.5"
+              title={showConfirmPassword ? 'Hide password' : 'Show password'}
+            >
+              {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+            </button>
           </div>
         </div>
 
@@ -119,7 +200,7 @@ export const SignUp: React.FC<SignUpProps> = ({ onToggleSignIn, onSuccess }) => 
           id="signup-submit-btn"
           type="submit"
           disabled={loading || requiresConfirmation}
-          className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs uppercase tracking-wider shadow-sm transition disabled:opacity-50 cursor-pointer"
+          className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs uppercase tracking-wider shadow-sm transition disabled:opacity-50 cursor-pointer mt-2"
         >
           <UserPlus className="w-4 h-4" />
           <span>{loading ? 'Creating Account...' : 'Sign Up'}</span>
@@ -152,7 +233,7 @@ export const SignUp: React.FC<SignUpProps> = ({ onToggleSignIn, onSuccess }) => 
       </form>
 
       {onToggleSignIn && (
-        <div className="mt-4 text-center text-xs text-slate-500 dark:text-slate-400">
+        <div className="mt-4 text-center text-xs text-slate-500 dark:text-slate-400 font-mono">
           Already have an account?{' '}
           <button
             type="button"

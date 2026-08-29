@@ -38,10 +38,12 @@ export interface SectorIndex {
   change: number;
   changePercent: number;
   ema50: number;
+  distanceFromEma50?: number;
   previousClose?: number;
   high52?: number;
   low52?: number;
   unavailable?: boolean;
+  lastUpdated?: string;
 }
 
 export interface MarketBenchmark {

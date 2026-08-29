@@ -459,7 +459,7 @@ export class YahooMarketDataProvider implements MarketDataProvider {
       };
     }
 
-    // 2. Fetch Sector Indices
+    // 2. Fetch Sector Indices with 1y range for authentic 50 EMA
     const sectorConfigs = [
       { name: 'Nifty 50', ticker: '^NSEI', category: 'Benchmark' },
       { name: 'Bank Nifty', ticker: '^NSEBANK', category: 'Banking' },
@@ -480,7 +480,7 @@ export class YahooMarketDataProvider implements MarketDataProvider {
       try {
         const chartUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(
           sec.ticker
-        )}?interval=1d&range=6mo`;
+        )}?interval=1d&range=1y`;
         const res = await fetch(chartUrl, {
           headers: {
             'User-Agent':
@@ -495,47 +495,67 @@ export class YahooMarketDataProvider implements MarketDataProvider {
           const timestamps: number[] = result?.timestamp || [];
           const rawCloses: (number | null)[] = result?.indicators?.quote?.[0]?.close || [];
 
-          const validCandles: { timestamp: number; close: number }[] = [];
+          const candleMap = new Map<number, number>();
           for (let i = 0; i < timestamps.length; i++) {
+            const t = timestamps[i];
             const c = rawCloses[i];
-            if (typeof c === 'number' && !isNaN(c) && c > 0) {
-              validCandles.push({ timestamp: timestamps[i], close: c });
+            if (typeof c === 'number' && !isNaN(c) && c > 0 && typeof t === 'number') {
+              candleMap.set(t, c);
             }
           }
-          validCandles.sort((a, b) => a.timestamp - b.timestamp);
-          const validCloses = validCandles.map((v) => v.close);
 
-          const latestValue = Number(
-            meta?.regularMarketPrice ??
-              (validCloses.length > 0 ? validCloses[validCloses.length - 1] : 0)
-          );
+          const sortedTimestamps = Array.from(candleMap.keys()).sort((a, b) => a - b);
+          const validCloses = sortedTimestamps.map((t) => candleMap.get(t)!);
 
-          const previousClose = Number(
-            meta?.chartPreviousClose ??
-              meta?.previousClose ??
-              (validCloses.length >= 2 ? validCloses[validCloses.length - 2] : latestValue)
-          );
+          if (validCloses.length >= 50) {
+            const latestValue = Number(
+              meta?.regularMarketPrice ?? validCloses[validCloses.length - 1]
+            );
 
-          if (latestValue > 0) {
-            const change = latestValue && previousClose ? Math.round((latestValue - previousClose) * 100) / 100 : 0;
-            const changePercent =
-              previousClose && previousClose > 0
-                ? Math.round(((latestValue - previousClose) / previousClose) * 10000) / 100
-                : 0;
+            const previousClose = Number(
+              meta?.chartPreviousClose ??
+                meta?.previousClose ??
+                (validCloses.length >= 2 ? validCloses[validCloses.length - 2] : latestValue)
+            );
 
-            const ema50 = calculateRealEMA(validCloses, 50) ?? 0;
+            const ema50 = calculateRealEMA(validCloses, 50);
 
-            return {
-              name: sec.name,
-              ticker: sec.ticker,
-              category: sec.category,
-              value: Math.round(latestValue * 100) / 100,
-              previousClose: Math.round(previousClose * 100) / 100,
-              change,
-              changePercent,
-              ema50,
-              unavailable: false,
-            };
+            if (latestValue > 0 && ema50 !== null && ema50 > 0) {
+              const change = latestValue && previousClose ? Math.round((latestValue - previousClose) * 100) / 100 : 0;
+              const changePercent =
+                previousClose && previousClose > 0
+                  ? Math.round(((latestValue - previousClose) / previousClose) * 10000) / 100
+                  : 0;
+
+              const distanceFromEma50 =
+                Math.round(((latestValue - ema50) / ema50) * 10000) / 100;
+
+              const candleTime = meta?.regularMarketTime
+                ? new Date(meta.regularMarketTime * 1000)
+                : sortedTimestamps.length > 0
+                ? new Date(sortedTimestamps[sortedTimestamps.length - 1] * 1000)
+                : new Date();
+
+              const lastUpdated = candleTime.toLocaleTimeString('en-IN', {
+                hour: '2-digit',
+                minute: '2-digit',
+                timeZone: 'Asia/Kolkata',
+              });
+
+              return {
+                name: sec.name,
+                ticker: sec.ticker,
+                category: sec.category,
+                value: Math.round(latestValue * 100) / 100,
+                previousClose: Math.round(previousClose * 100) / 100,
+                change,
+                changePercent,
+                ema50,
+                distanceFromEma50,
+                unavailable: false,
+                lastUpdated,
+              };
+            }
           }
         }
       } catch (err) {

@@ -168,6 +168,21 @@ class ApiClient {
     });
   }
 
+  public async saveHolding(portfolioId: string, holding: any) {
+    return this.request<any>(`/api/portfolios/${portfolioId}/transactions`, {
+      method: 'POST',
+      body: JSON.stringify({
+        portfolioId,
+        ticker: holding.ticker,
+        type: 'BUY',
+        qty: holding.qty,
+        price: holding.buyPrice,
+        date: holding.buyDate || new Date().toISOString().slice(0, 10),
+        notes: holding.notes,
+      }),
+    });
+  }
+
   public async deleteTransaction(portfolioId: string, txId: string) {
     return this.request<any>(`/api/portfolios/${portfolioId}/transactions/${txId}`, {
       method: 'DELETE',
@@ -188,6 +203,13 @@ class ApiClient {
 
   public async addWatchlistItem(watchlistId: string, item: any) {
     return this.request<any>(`/api/watchlists/${watchlistId}/items`, {
+      method: 'POST',
+      body: JSON.stringify(item),
+    });
+  }
+
+  public async saveWatchlistItem(item: any) {
+    return this.request<any>('/api/watchlists/default/items', {
       method: 'POST',
       body: JSON.stringify(item),
     });

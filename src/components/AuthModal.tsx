@@ -1,14 +1,18 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, ShieldCheck } from 'lucide-react';
 import { SignIn } from './SignIn';
 import { SignUp } from './SignUp';
+import { ForgotPassword } from './ForgotPassword';
+import { ResetPassword } from './ResetPassword';
 import { AuthUser } from '../services/apiClient';
+
+export type AuthMode = 'signin' | 'signup' | 'forgot' | 'reset';
 
 interface AuthModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSuccess?: (user: AuthUser) => void;
-  initialMode?: 'signin' | 'signup';
+  onSuccess?: (user?: AuthUser) => void;
+  initialMode?: AuthMode;
 }
 
 export const AuthModal: React.FC<AuthModalProps> = ({
@@ -16,7 +20,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   onClose,
   initialMode = 'signin',
 }) => {
-  const [mode, setMode] = useState<'signin' | 'signup'>(initialMode);
+  const [mode, setMode] = useState<AuthMode>(initialMode);
+
+  useEffect(() => {
+    if (isOpen) {
+      setMode(initialMode);
+    }
+  }, [isOpen, initialMode]);
 
   if (!isOpen) return null;
 
@@ -31,7 +41,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             </div>
             <div>
               <h3 className="text-base font-bold text-slate-900 dark:text-white">
-                {mode === 'signin' ? 'Sign In to Portfolio' : 'Create Account'}
+                {mode === 'signin' && 'Sign In to Portfolio'}
+                {mode === 'signup' && 'Create Account'}
+                {mode === 'forgot' && 'Account Recovery'}
+                {mode === 'reset' && 'Reset Password'}
               </h3>
               <p className="text-xs text-slate-500 dark:text-slate-400">
                 Supabase Authentication & Row Level Security
@@ -47,49 +60,65 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           </button>
         </div>
 
-        {/* Tab Switcher */}
-        <div className="flex border-b border-slate-200 dark:border-slate-800 bg-slate-100/60 dark:bg-slate-950/60 p-1">
-          <button
-            type="button"
-            onClick={() => setMode('signin')}
-            className={`flex-1 py-1.5 text-xs font-mono font-bold rounded transition cursor-pointer ${
-              mode === 'signin'
-                ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-xs'
-                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-            }`}
-          >
-            SIGN IN
-          </button>
-          <button
-            type="button"
-            onClick={() => setMode('signup')}
-            className={`flex-1 py-1.5 text-xs font-mono font-bold rounded transition cursor-pointer ${
-              mode === 'signup'
-                ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-xs'
-                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-            }`}
-          >
-            SIGN UP
-          </button>
-        </div>
+        {/* Tab Switcher - only show for signin/signup */}
+        {(mode === 'signin' || mode === 'signup') && (
+          <div className="flex border-b border-slate-200 dark:border-slate-800 bg-slate-100/60 dark:bg-slate-950/60 p-1">
+            <button
+              type="button"
+              onClick={() => setMode('signin')}
+              className={`flex-1 py-1.5 text-xs font-mono font-bold rounded transition cursor-pointer ${
+                mode === 'signin'
+                  ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              SIGN IN
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode('signup')}
+              className={`flex-1 py-1.5 text-xs font-mono font-bold rounded transition cursor-pointer ${
+                mode === 'signup'
+                  ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              SIGN UP
+            </button>
+          </div>
+        )}
 
         {/* Form Body */}
         <div className="p-6">
-          {mode === 'signin' ? (
+          {mode === 'signin' && (
             <SignIn
               onToggleSignUp={() => setMode('signup')}
+              onForgotPassword={() => setMode('forgot')}
               onSuccess={onClose}
             />
-          ) : (
+          )}
+
+          {mode === 'signup' && (
             <SignUp
               onToggleSignIn={() => setMode('signin')}
               onSuccess={onClose}
             />
           )}
 
+          {mode === 'forgot' && (
+            <ForgotPassword onBackToSignIn={() => setMode('signin')} />
+          )}
+
+          {mode === 'reset' && (
+            <ResetPassword
+              onSuccess={onClose}
+              onBackToSignIn={() => setMode('signin')}
+            />
+          )}
+
           <div className="mt-5 pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-center gap-1.5 text-[11px] font-mono text-slate-400">
             <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
-            <span>Protected by Supabase Auth (Zero Password Storage)</span>
+            <span>Encrypted Supabase Session & Strict Data Isolation</span>
           </div>
         </div>
       </div>

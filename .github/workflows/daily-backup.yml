@@ -17,5 +17,5 @@ jobs:
 
       - name: Send copy to backup room
         run: |
-          git remote add backup "https://x-access-token:${{ secrets.BACKUP_PAT }}@github.com/skbhamrah1/Portfolio-Tracker-Backup.git"
+          git remote add backup "https://${{ secrets.BACKUP_PAT }}@github.com/skbhamrah1/Portfolio-Tracker-Backup.git"
           git push --mirror backup

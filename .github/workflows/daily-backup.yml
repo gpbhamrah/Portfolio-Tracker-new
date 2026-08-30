@@ -2,20 +2,20 @@ name: Daily Repository Backup
 
 on:
   schedule:
-    # Runs automatically every single day at midnight
+    # Runs automatically every single day at midnight UTC
     - cron: '0 0 * * *'
-  workflow_dispatch: # Lets you press a button to run it manually!
+  workflow_dispatch: # Allows manual trigger from the Actions tab
 
 jobs:
   backup:
     runs-on: ubuntu-latest
     steps:
-      - name: Copy code
+      - name: Checkout repository code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 0 # Fetches full history, all branches, and tags
 
-      - name: Send copy to backup room
+      - name: Push mirror to backup repository
         run: |
-          git remote add backup "https://${{ secrets.BACKUP_PAT }}@github.com/skbhamrah1/Portfolio-Tracker-Backup.git"
+          git remote add backup "https://skbhamrah1:${{ secrets.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 }}@github.com/skbhamrah1/Portfolio-Tracker-Backup.git"
           git push --mirror backup
